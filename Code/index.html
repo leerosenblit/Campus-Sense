@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus-Sense Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; padding: 20px; }
+        .header { text-align: center; color: #2c3e50; }
+        .dashboard { display: flex; justify-content: center; margin-top: 50px; }
+        .room-card { 
+            background: white; border-radius: 10px; padding: 30px; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 350px; text-align: center;
+            transition: all 0.3s ease;
+        }
+        .status-indicator { 
+            width: 20px; height: 20px; border-radius: 50%; display: inline-block; margin-right: 10px;
+        }
+        .status-row { display: flex; align-items: center; justify-content: center; margin: 15px 0; font-size: 1.2em; }
+        .hazard-alert { 
+            background-color: #ff4d4d; color: white; padding: 15px; 
+            border-radius: 5px; font-weight: bold; margin-top: 20px; display: none;
+            animation: blink 1s linear infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+        /* Dynamic state classes */
+        .color-green { background-color: #2ecc71; }
+        .color-red { background-color: #e74c3c; }
+        .color-gray { background-color: #95a5a6; }
+        .color-yellow { background-color: #f1c40f; }
+    </style>
+</head>
+<body>
+
+    <h1 class="header">Campus-Sense | Live Dashboard</h1>
+
+    <div class="dashboard">
+        <div class="room-card" id="roomCard">
+            <h2>Room 301</h2>
+            
+            <div class="status-row">
+                <div id="occColor" class="status-indicator color-gray"></div>
+                <span>Occupancy: <strong id="occText">Loading...</strong></span>
+            </div>
+
+            <div class="status-row">
+                <div id="sysColor" class="status-indicator color-gray"></div>
+                <span>Systems: <strong id="sysText">Loading...</strong></span>
+            </div>
+
+            <div id="hazardBanner" class="hazard-alert">
+                ⚠️ HAZARD DETECTED: SPILL REPORTED!
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <script>
+        // TODO: Replace this entire object with your Web Config from Firebase
+        const firebaseConfig = {
+            "type": "service_account",
+            "project_id": "campus-sense-e73a0",
+            "private_key_id": "e8b5c89ead581287de3861e74070ac825424776b",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDEVJ1NVy8SI6jL\nH9SVGf+antwv0lDCQ5X7EYNt0FeouRnylnpe/Z91c9522bvayu332sVQitwc+lIY\nMOLfByBNya0rYgDKFuoqiek8GHmwaguiYzA/c3O0uCpzEL9Z0cl/NTh3yIA0Dp52\nbz1i5Rzl+DfuwENHTDgCfwO3yzEk/uho3qSeEpib9fEPmIwPJq4ZQBF3SkbNeXX+\nI1OUPgNj5diqYTu51p/ow1DdR4WJbQ4cJ/zP+2UCkJ1P3YsgvT9+jsEdhLmtcLzk\nagK7eZFhdBwp5eV9HT+EJQvAh7igZKP0F3NkxRQ22a929jMS0Q+LAMeAURmWd0yT\nSm9k8p6PAgMBAAECggEAKH4/N21s8vPR45s8EEiddHmhdmeNapPgAjmZfvPCsLUE\nygkJUkBDPElar+62lSjXrhA8NCF/xqZGemDS2icxHXokMldzTDsvrvhk15VAvAcT\nQTnuAJhCXBrD/pmMrezb/1WtwN7kulftjQXihlw0+qWYe7DB75mjz7f8v1K0Xymr\nqZWNHXW1hwQT0kgNDzLmxIlL8x9Bd/o4BI2GXYM1Ltizu0f13Y3Xp6iDtbUAM0rg\nQbwYez5yP6QZjr95LqgXQQJ2aW7BeEEnzYvsNxuMMsQrEBUQiDBIxU3/JMt16Fry\nMfGozO66hD/z66LDSsz13crrQNlsNHoH00dKLYItIQKBgQDl5D3VLJg8wxl8bVhZ\ncT6fxJSbBuGN1Zpu0Uo1+45vpHw+hdkvudCwVpA2giIFhoEeyLvSE0PtNyglkoLT\nGBzgP7e04LJYpyGZMv29yG7B9R6mXhUjpIN8r2YKQiodIHG3FYeHkJyqztA9VgnQ\nW+M2KMwe1b4ATOfRLl9nKMJJMQKBgQDaoKKTzcWHQsHZZuq87KfynVGpwZQGbMAZ\nvWZsAO9QIlCSlhigE0VXC4BeGNib5zZWE/NtDjaKQjAGgW4winLrfNogfEiZSuUP\nc+n0LGnNlIQEBi7y3+ojsYYV1pKV9EG9S+Gq0YjD9GebnPFUf+Miy9ol4I6lpaNT\nESXxb61zvwKBgCVFQKUL6s6HDt22WIl/q5h5ZWJQ1kaJZ9Uphy+DTg9Zim8UgiaT\nqHq+PfkoVd2xdcOI5bJkPzH5LEATJbSVhzDwA5eGikOHLRJKSwr2sMYvOD3eqOyz\nYkHXqeJl4bABL45wJh3bWxryFp6rEUI/c3G3YYhqPLiNv1ORghQWbpExAoGAKf4o\nvBMOGcjsywFFnTwnliY5hU21TPaef1Mt1Rjo3o94wm8qE7Uf4HRJF8nV8Twb57S1\nUQEl4LCN4PIDZDdzk1/L1emJWEhWbv1otonBWMdqBAvcALKZmnmCs7cfOMZNyjpF\nAjZ0+o57SByBDiXyTsCxCg1z2MVT9aSZkSJOQqkCgYEA4YGevW3iJ/BD+t+INQ4g\n0IpQzG7ZsvltNL5qdsvNoLcSKPHjIqfETdyWOdRkQ18tNGMK6hn5Nx28dyH6ZyuC\nAvDloO4McZ7T+2FQ2lyYVGMpIEcI/6HsaG358H/bsaDu2H1BuDyGI4WguiPemdN4\nX8oaIhvzdtAivHEXN0M1GL0=\n-----END PRIVATE KEY-----\n",
+            "client_email": "firebase-adminsdk-fbsvc@campus-sense-e73a0.iam.gserviceaccount.com",
+            "client_id": "101386139286081801410",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40campus-sense-e73a0.iam.gserviceaccount.com",
+            "universe_domain": "googleapis.com"
+            };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // DOM Elements
+        const occColor = document.getElementById('occColor');
+        const occText = document.getElementById('occText');
+        const sysColor = document.getElementById('sysColor');
+        const sysText = document.getElementById('sysText');
+        const hazardBanner = document.getElementById('hazardBanner');
+        const roomCard = document.getElementById('roomCard');
+
+        // Listen for real-time updates from Room 301
+        const roomRef = db.ref('campus/rooms/301');
+        
+        roomRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            
+            if (data) {
+                // Update Occupancy UI
+                if (data.isOccupied) {
+                    occText.innerText = "Yes";
+                    occColor.className = "status-indicator color-green";
+                } else {
+                    occText.innerText = "No";
+                    occColor.className = "status-indicator color-red";
+                }
+
+                // Update Systems UI
+                if (data.systemsOn) {
+                    sysText.innerText = "ON (Active)";
+                    sysColor.className = "status-indicator color-yellow";
+                } else {
+                    sysText.innerText = "OFF (Energy Saving)";
+                    sysColor.className = "status-indicator color-gray";
+                }
+
+                // Update Hazard UI
+                if (data.hazardReported) {
+                    hazardBanner.style.display = "block";
+                    roomCard.style.border = "2px solid red";
+                } else {
+                    hazardBanner.style.display = "none";
+                    roomCard.style.border = "none";
+                }
+            }
+        });
+    </script>
+</body>
+</html>

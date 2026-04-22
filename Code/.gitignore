@@ -1,1 +1,5 @@
+# Firebase backend service account key
 firebase_key.json
+
+# Firebase frontend web configuration
+firebase_config.js

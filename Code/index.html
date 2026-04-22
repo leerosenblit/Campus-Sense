@@ -3,123 +3,343 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Campus-Sense Dashboard</title>
+    <title>Campus-Sense | Professional Command Center</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; padding: 20px; }
-        .header { text-align: center; color: #2c3e50; }
-        .dashboard { display: flex; justify-content: center; margin-top: 50px; }
-        .room-card { 
-            background: white; border-radius: 10px; padding: 30px; 
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 350px; text-align: center;
-            transition: all 0.3s ease;
+        /* CSS Variables for Easy Theme Toggling */
+        :root {
+            --bg-color: #f0f2f5;
+            --sidebar-bg: #2c3e50;
+            --text-main: #2c3e50;
+            --text-light: #7f8c8d;
+            --card-bg: #ffffff;
+            --border-color: #e1e5eb;
+            --accent-blue: #3498db;
+            --success-green: #2ecc71;
+            --danger-red: #e74c3c;
+            --card-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            --icon-color: #2c3e50;
+            --occupied-bg: #f0fff4; /* Light green for light mode */
         }
-        .status-indicator { 
-            width: 20px; height: 20px; border-radius: 50%; display: inline-block; margin-right: 10px;
+
+        /* Dark Mode Overrides */
+        body.dark-theme {
+            --bg-color: #121212;
+            --sidebar-bg: #0a0a0a;
+            --text-main: #e0e0e0;
+            --text-light: #a0a0a0;
+            --card-bg: #1e1e1e;
+            --border-color: #333333;
+            --card-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            --icon-color: #e0e0e0;
+            --occupied-bg: #1e3a2a; /* Dark green for dark mode */
         }
-        .status-row { display: flex; align-items: center; justify-content: center; margin: 15px 0; font-size: 1.2em; }
-        .hazard-alert { 
-            background-color: #ff4d4d; color: white; padding: 15px; 
-            border-radius: 5px; font-weight: bold; margin-top: 20px; display: none;
-            animation: blink 1s linear infinite;
+
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background-color: var(--bg-color); 
+            color: var(--text-main);
+            margin: 0; 
+            display: flex; 
+            height: 100vh;
+            overflow: hidden;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
-        @keyframes blink { 50% { opacity: 0; } }
-        /* Dynamic state classes */
-        .color-green { background-color: #2ecc71; }
-        .color-red { background-color: #e74c3c; }
-        .color-gray { background-color: #95a5a6; }
-        .color-yellow { background-color: #f1c40f; }
+
+        /* Sidebar Styling */
+        .sidebar { width: 280px; background-color: var(--sidebar-bg); color: white; padding: 25px; display: flex; flex-direction: column; z-index: 10; transition: background-color 0.3s; }
+        .sidebar h2 { font-size: 1.5rem; margin-bottom: 30px; border-bottom: 1px solid #3e5871; padding-bottom: 10px; }
+        .stat-card { background: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .stat-card small { color: #bdc3c7; font-size: 0.8rem; }
+        .stat-card div { font-size: 1.4rem; font-weight: bold; margin-top: 5px; }
+
+        /* Theme Toggle Bottom of Sidebar */
+        .theme-section { margin-top: auto; border-top: 1px solid #3e5871; padding-top: 15px; display: flex; align-items: center; justify-content: space-between; }
+        .theme-toggle { background: transparent; border: none; cursor: pointer; padding: 5px; display: flex; align-items: center; justify-content: center; transition: transform 0.2s ease; }
+        .theme-toggle:hover { transform: scale(1.1); }
+        .theme-toggle svg { width: 24px; height: 24px; fill: #ecf0f1; } 
+
+        /* Main Content */
+        .main-content { flex: 1; padding: 25px; overflow-y: auto; display: flex; flex-direction: column; }
+        .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px; border-bottom: 2px solid var(--border-color); padding-bottom: 15px;}
+        
+        /* Filters */
+        .filters { display: flex; gap: 15px; margin-top: 10px; }
+        .filters select, .filters input { 
+            padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; outline: none; 
+            background-color: var(--card-bg); color: var(--text-main); transition: all 0.3s ease;
+        }
+
+        /* Profile */
+        .user-profile { text-align: left; }
+        .user-badge { 
+            background: var(--card-bg); padding: 8px 15px; border-radius: 20px; box-shadow: var(--card-shadow); 
+            font-weight: bold; color: var(--text-main); display: inline-flex; align-items: center; gap: 8px;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        .user-avatar { background: var(--accent-blue); color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; }
+
+        /* Toggle Feed Button */
+        .btn-toggle-feed { 
+            background-color: var(--card-bg); color: var(--text-main); border: 2px solid var(--border-color); 
+            padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; 
+            box-shadow: var(--card-shadow); transition: all 0.3s ease; display: flex; align-items: center; gap: 10px; 
+        }
+        .btn-toggle-feed:hover { border-color: var(--accent-blue); }
+
+        /* Map Container */
+        .map-container { background: var(--card-bg); padding: 20px; border-radius: 12px; box-shadow: var(--card-shadow); flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; align-content: start; transition: background-color 0.3s ease; }
+        .room-node { border: 2px solid var(--border-color); border-radius: 10px; padding: 20px; text-align: center; transition: all 0.3s ease; position: relative; }
+        
+        /* Dynamic Room States */
+        .room-node.room-occupied { background-color: var(--occupied-bg); }
+        .room-node.active-hazard { border-color: var(--danger-red); animation: pulse-red 2s infinite; }
+        
+        .room-name { font-weight: bold; font-size: 1.1rem; margin-bottom: 10px; display: block; color: var(--text-main); }
+        .badge { font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; text-transform: uppercase; font-weight: bold; }
+        .badge-on { background: #e8f8f0; color: var(--success-green); }
+        .badge-off { background: #f2f2f2; color: #7f8c8d; }
+        .badge-alert { background: #fdeaea; color: var(--danger-red); }
+
+        /* Alerts Wrapper */
+        .alerts-wrapper { width: 320px; background: var(--card-bg); border-left: 1px solid var(--border-color); transition: width 0.3s ease, background-color 0.3s ease; overflow: hidden; display: flex; flex-direction: column; }
+        .alerts-wrapper.collapsed { width: 0; border-left: none; }
+        .alerts-panel { width: 320px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; height: 100%; }
+        
+        /* Feed inner close button */
+        .btn-close-feed { background: none; border: none; color: var(--text-light); cursor: pointer; font-size: 1.2rem; padding: 0; display: flex; align-items: center; transition: color 0.2s; }
+        .btn-close-feed:hover { color: var(--accent-blue); }
+
+        .alert-item { padding: 12px; border-radius: 6px; margin-bottom: 10px; font-size: 0.9rem; background: var(--bg-color); color: var(--text-main); box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: relative; transition: background-color 0.3s ease; }
+        .alert-critical { border-left: 4px solid var(--danger-red); }
+        .alert-time { font-size: 0.8rem; color: var(--text-light); display: block; margin-top: 5px; }
+        
+        .alert-close { position: absolute; top: 8px; right: 10px; cursor: pointer; color: var(--text-light); font-weight: bold; font-size: 1.2rem; transition: color 0.2s; }
+        .alert-close:hover { color: var(--danger-red); }
+        
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(231, 76, 60, 0); } 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); } }
     </style>
 </head>
 <body>
 
-    <h1 class="header">Campus-Sense | Live Dashboard</h1>
+    <div class="sidebar">
+        <div>
+            <h2>Campus-Sense</h2>
+            <div class="stat-card">
+                <small>ENERGY SAVED THIS MONTH</small>
+                <div id="globalEnergy">312 kWh</div>
+            </div>
+            <div class="stat-card">
+                <small>AVG RESPONSE TIME</small>
+                <div>14 Min</div>
+            </div>
+            <div class="stat-card">
+                <small>SYSTEM STATUS</small>
+                <div style="color: var(--success-green); font-size: 1rem;">● All Units Online</div>
+            </div>
+        </div>
 
-    <div class="dashboard">
-        <div class="room-card" id="roomCard">
-            <h2>Room 301</h2>
+        <div class="theme-section">
+            <span style="font-size: 0.9rem; color: #bdc3c7;">Appearance</span>
+            <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">
+                <svg id="icon-sun" viewBox="0 0 24 24">
+                    <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41.39.39 1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41.39.39 1.03.39 1.41 0l1.06-1.06z"/>
+                </svg>
+                <svg id="icon-moon" viewBox="0 0 24 24" style="display: none;">
+                    <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="user-profile">
+                <div class="user-badge">
+                    <div class="user-avatar">LR</div>
+                    Staff: Lee Rosenblit
+                </div>
+                <div id="liveTime" style="color: var(--text-light); font-size: 0.9rem; margin-top: 5px; padding-left: 5px;"></div>
+            </div>
+
+            <div style="flex: 1; padding: 0 20px;">
+                <h1 style="margin: 0 0 5px 0; color: var(--text-main);">Campus Overview</h1>
+                <div class="filters">
+                    <select id="buildingFilter">
+                        <option value="all">All Buildings</option>
+                        <option value="ficus">Building: Ficus</option>
+                        <option value="oren">Building: Oren</option>
+                    </select>
+                    <input type="text" id="searchRoom" placeholder="Search room...">
+                </div>
+            </div>
             
-            <div class="status-row">
-                <div id="occColor" class="status-indicator color-gray"></div>
-                <span>Occupancy: <strong id="occText">Loading...</strong></span>
+            <div id="btnToggleContainer">
+                <button id="btnToggleFeed" class="btn-toggle-feed" onclick="toggleFeed()">
+                    🔔 Maintenance Feed
+                </button>
             </div>
+        </div>
 
-            <div class="status-row">
-                <div id="sysColor" class="status-indicator color-gray"></div>
-                <span>Systems: <strong id="sysText">Loading...</strong></span>
+        <div class="map-container" id="roomsContainer">
+            <div id="node301" class="room-node" data-building="ficus" data-room="301">
+                <span class="room-name">Room 301 (Ficus)</span>
+                <div id="status301" style="margin-bottom: 15px;">Loading...</div>
+                <div id="badges301"></div>
             </div>
-
-            <div id="hazardBanner" class="hazard-alert">
-                ⚠️ HAZARD DETECTED: SPILL REPORTED!
+            <div class="room-node" data-building="ficus" data-room="302" style="opacity: 0.6;">
+                <span class="room-name">Room 302 (Ficus)</span>
+                <div style="margin-bottom: 15px;">⚪ Empty</div>
+                <span class="badge badge-off">Saving Mode</span>
+            </div>
+            <div class="room-node" data-building="oren" data-room="lab 10" style="opacity: 0.6;">
+                <span class="room-name">Lab 10 (Oren)</span>
+                <div style="margin-bottom: 15px;">⚪ Empty</div>
+                <span class="badge badge-off">Saving Mode</span>
             </div>
         </div>
     </div>
 
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <div class="alerts-wrapper collapsed" id="alertsWrapper">
+        <div class="alerts-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="btn-close-feed" onclick="toggleFeed()" title="Close Feed">▶</button>
+                    <h3 style="margin: 0; color: var(--text-main);">Feed</h3>
+                </div>
+                <button style="background:none; border:none; color:var(--accent-blue); cursor:pointer; font-weight:bold;" onclick="clearAllAlerts()">Clear</button>
+            </div>
+            <div id="alertFeed" style="flex: 1; overflow-y: auto;"></div>
+        </div>
+    </div>
 
+    <script src="firebase_config.js"></script>
     <script>
-        // TODO: Replace this entire object with your Web Config from Firebase
-        const firebaseConfig = {
-            "type": "service_account",
-            "project_id": "campus-sense-e73a0",
-            "private_key_id": "e8b5c89ead581287de3861e74070ac825424776b",
-            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDEVJ1NVy8SI6jL\nH9SVGf+antwv0lDCQ5X7EYNt0FeouRnylnpe/Z91c9522bvayu332sVQitwc+lIY\nMOLfByBNya0rYgDKFuoqiek8GHmwaguiYzA/c3O0uCpzEL9Z0cl/NTh3yIA0Dp52\nbz1i5Rzl+DfuwENHTDgCfwO3yzEk/uho3qSeEpib9fEPmIwPJq4ZQBF3SkbNeXX+\nI1OUPgNj5diqYTu51p/ow1DdR4WJbQ4cJ/zP+2UCkJ1P3YsgvT9+jsEdhLmtcLzk\nagK7eZFhdBwp5eV9HT+EJQvAh7igZKP0F3NkxRQ22a929jMS0Q+LAMeAURmWd0yT\nSm9k8p6PAgMBAAECggEAKH4/N21s8vPR45s8EEiddHmhdmeNapPgAjmZfvPCsLUE\nygkJUkBDPElar+62lSjXrhA8NCF/xqZGemDS2icxHXokMldzTDsvrvhk15VAvAcT\nQTnuAJhCXBrD/pmMrezb/1WtwN7kulftjQXihlw0+qWYe7DB75mjz7f8v1K0Xymr\nqZWNHXW1hwQT0kgNDzLmxIlL8x9Bd/o4BI2GXYM1Ltizu0f13Y3Xp6iDtbUAM0rg\nQbwYez5yP6QZjr95LqgXQQJ2aW7BeEEnzYvsNxuMMsQrEBUQiDBIxU3/JMt16Fry\nMfGozO66hD/z66LDSsz13crrQNlsNHoH00dKLYItIQKBgQDl5D3VLJg8wxl8bVhZ\ncT6fxJSbBuGN1Zpu0Uo1+45vpHw+hdkvudCwVpA2giIFhoEeyLvSE0PtNyglkoLT\nGBzgP7e04LJYpyGZMv29yG7B9R6mXhUjpIN8r2YKQiodIHG3FYeHkJyqztA9VgnQ\nW+M2KMwe1b4ATOfRLl9nKMJJMQKBgQDaoKKTzcWHQsHZZuq87KfynVGpwZQGbMAZ\nvWZsAO9QIlCSlhigE0VXC4BeGNib5zZWE/NtDjaKQjAGgW4winLrfNogfEiZSuUP\nc+n0LGnNlIQEBi7y3+ojsYYV1pKV9EG9S+Gq0YjD9GebnPFUf+Miy9ol4I6lpaNT\nESXxb61zvwKBgCVFQKUL6s6HDt22WIl/q5h5ZWJQ1kaJZ9Uphy+DTg9Zim8UgiaT\nqHq+PfkoVd2xdcOI5bJkPzH5LEATJbSVhzDwA5eGikOHLRJKSwr2sMYvOD3eqOyz\nYkHXqeJl4bABL45wJh3bWxryFp6rEUI/c3G3YYhqPLiNv1ORghQWbpExAoGAKf4o\nvBMOGcjsywFFnTwnliY5hU21TPaef1Mt1Rjo3o94wm8qE7Uf4HRJF8nV8Twb57S1\nUQEl4LCN4PIDZDdzk1/L1emJWEhWbv1otonBWMdqBAvcALKZmnmCs7cfOMZNyjpF\nAjZ0+o57SByBDiXyTsCxCg1z2MVT9aSZkSJOQqkCgYEA4YGevW3iJ/BD+t+INQ4g\n0IpQzG7ZsvltNL5qdsvNoLcSKPHjIqfETdyWOdRkQ18tNGMK6hn5Nx28dyH6ZyuC\nAvDloO4McZ7T+2FQ2lyYVGMpIEcI/6HsaG358H/bsaDu2H1BuDyGI4WguiPemdN4\nX8oaIhvzdtAivHEXN0M1GL0=\n-----END PRIVATE KEY-----\n",
-            "client_email": "firebase-adminsdk-fbsvc@campus-sense-e73a0.iam.gserviceaccount.com",
-            "client_id": "101386139286081801410",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40campus-sense-e73a0.iam.gserviceaccount.com",
-            "universe_domain": "googleapis.com"
-            };
-
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
-
-        // DOM Elements
-        const occColor = document.getElementById('occColor');
-        const occText = document.getElementById('occText');
-        const sysColor = document.getElementById('sysColor');
-        const sysText = document.getElementById('sysText');
-        const hazardBanner = document.getElementById('hazardBanner');
-        const roomCard = document.getElementById('roomCard');
-
-        // Listen for real-time updates from Room 301
-        const roomRef = db.ref('campus/rooms/301');
-        
-        roomRef.on('value', (snapshot) => {
-            const data = snapshot.val();
+        // --- THEME LOGIC ---
+        function toggleTheme() {
+            const body = document.body;
+            body.classList.toggle('dark-theme');
             
-            if (data) {
-                // Update Occupancy UI
-                if (data.isOccupied) {
-                    occText.innerText = "Yes";
-                    occColor.className = "status-indicator color-green";
-                } else {
-                    occText.innerText = "No";
-                    occColor.className = "status-indicator color-red";
-                }
+            const sunIcon = document.getElementById('icon-sun');
+            const moonIcon = document.getElementById('icon-moon');
+            
+            if (body.classList.contains('dark-theme')) {
+                sunIcon.style.display = 'none';
+                moonIcon.style.display = 'block';
+            } else {
+                sunIcon.style.display = 'block';
+                moonIcon.style.display = 'none';
+            }
+        }
 
-                // Update Systems UI
-                if (data.systemsOn) {
-                    sysText.innerText = "ON (Active)";
-                    sysColor.className = "status-indicator color-yellow";
-                } else {
-                    sysText.innerText = "OFF (Energy Saving)";
-                    sysColor.className = "status-indicator color-gray";
-                }
+        // --- EXPOSE REMOVE ALERT FUNCTION GLOBALLY ---
+        window.removeAlert = function(alertId) {
+            const alertElement = document.getElementById(alertId);
+            if (alertElement) {
+                alertElement.remove();
+            }
+        }
 
-                // Update Hazard UI
-                if (data.hazardReported) {
-                    hazardBanner.style.display = "block";
-                    roomCard.style.border = "2px solid red";
+        if (typeof firebaseConfig !== 'undefined') {
+            firebase.initializeApp(firebaseConfig);
+            const db = firebase.database();
+
+            // Filtering
+            const buildingFilter = document.getElementById('buildingFilter');
+            const searchRoom = document.getElementById('searchRoom');
+            const roomNodes = document.querySelectorAll('.room-node');
+
+            function applyFilters() {
+                const b = buildingFilter.value.toLowerCase();
+                const s = searchRoom.value.toLowerCase();
+                roomNodes.forEach(n => {
+                    const matchesB = (b === 'all') || (n.getAttribute('data-building') === b);
+                    const matchesS = n.getAttribute('data-room').includes(s);
+                    n.style.display = (matchesB && matchesS) ? 'block' : 'none';
+                });
+            }
+            buildingFilter.addEventListener('change', applyFilters);
+            searchRoom.addEventListener('input', applyFilters);
+
+            // Alerts Feed Setup
+            const alertsWrapper = document.getElementById('alertsWrapper');
+            const btnToggleFeed = document.getElementById('btnToggleFeed');
+
+            // Controls visibility of the main button
+            function updateFeedVisibility() {
+                if (alertsWrapper.classList.contains('collapsed')) {
+                    btnToggleFeed.style.display = 'flex'; // Show button when feed is closed
                 } else {
-                    hazardBanner.style.display = "none";
-                    roomCard.style.border = "none";
+                    btnToggleFeed.style.display = 'none'; // Hide button when feed is open
                 }
             }
-        });
+
+            function toggleFeed() {
+                alertsWrapper.classList.toggle('collapsed');
+                updateFeedVisibility();
+            }
+            
+            // Expose globally for the inline onclick handler
+            window.toggleFeed = toggleFeed;
+
+            window.clearAllAlerts = function() { 
+                document.getElementById('alertFeed').innerHTML = ''; 
+            }
+
+            // Initialize button visibility on load
+            updateFeedVisibility();
+
+            // Firebase Listener
+            const node301 = document.getElementById('node301');
+            const status301 = document.getElementById('status301');
+            const alertFeed = document.getElementById('alertFeed');
+            let prevHazard = false;
+
+            db.ref('campus/rooms/301').on('value', snap => {
+                const d = snap.val();
+                if (!d) return;
+
+                // Handle Occupancy (using CSS classes now instead of inline styles!)
+                if (d.isOccupied) {
+                    status301.innerHTML = '👤 <span style="color:var(--success-green)">Occupied</span>';
+                    node301.classList.add('room-occupied');
+                } else {
+                    status301.innerHTML = '⚪ Empty';
+                    node301.classList.remove('room-occupied');
+                }
+                
+                document.getElementById('badges301').innerHTML = (d.systemsOn ? '<span class="badge badge-on">Systems ON</span> ' : '<span class="badge badge-off">Saving Mode</span> ') + (d.hazardReported ? '<span class="badge badge-alert">HAZARD</span>' : '');
+                
+                if (d.hazardReported) {
+                    node301.classList.add('active-hazard');
+                    if (!prevHazard) {
+                        alertsWrapper.classList.remove('collapsed');
+                        updateFeedVisibility(); // Ensure button hides when auto-opening
+
+                        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        const uniqueId = 'alert-' + Date.now();
+                        
+                        const newAlert = `
+                            <div class="alert-item alert-critical" id="${uniqueId}">
+                                <span class="alert-close" onclick="removeAlert('${uniqueId}')" title="Dismiss Alert">&times;</span>
+                                <strong>SPILL DETECTED</strong><br>
+                                Room 301 | Sensor Triggered<br>
+                                <span class="alert-time">🕒 ${timestamp}</span>
+                            </div>
+                        `;
+                        alertFeed.insertAdjacentHTML('afterbegin', newAlert);
+                    }
+                } else { 
+                    node301.classList.remove('active-hazard'); 
+                }
+                prevHazard = d.hazardReported;
+            });
+
+            setInterval(() => { document.getElementById('liveTime').innerText = new Date().toLocaleTimeString(); }, 1000);
+        } else {
+            console.error("firebase_config.js is missing!");
+        }
     </script>
 </body>
 </html>

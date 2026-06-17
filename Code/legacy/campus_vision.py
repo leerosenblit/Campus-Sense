@@ -1,3 +1,5 @@
+#python -m http.server 8000
+#python campus_vision.py
 import cv2
 import time
 import firebase_admin
@@ -5,7 +7,7 @@ from firebase_admin import credentials, db
 
 # --- Firebase Setup ---
 # Initialize the app with a service account, granting admin privileges
-cred = credentials.Certificate("Code/firebase_key.json")
+cred = credentials.Certificate("firebase_key.json")
 
 # TODO: Replace with your actual Firebase Realtime Database URL
 firebase_admin.initialize_app(cred, {

@@ -2,8 +2,12 @@ import { io } from "socket.io-client";
 
 // Auth token kept in memory (not localStorage) to reduce XSS risk (book §5.4).
 let token = null;
+let role = null;
 export const setToken = (t) => { token = t; };
 export const getToken = () => token;
+export const setRole = (r) => { role = r; };
+export const getRole = () => role;
+export const isLoggedIn = () => Boolean(token);
 
 const BASE = "/api";
 
@@ -21,6 +25,7 @@ export async function login(email, password) {
     body: JSON.stringify({ email, password }),
   });
   setToken(data.token);
+  setRole(data.role);
   return data;
 }
 

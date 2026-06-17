@@ -1,8 +1,11 @@
 import { Router } from "express";
 import { query } from "../db.js";
-import { requireAuth } from "../auth.js";
+import { requireAuth, requireRole } from "../auth.js";
 
 const router = Router();
+
+// Analytics are for the operations manager (book §3.2, FR7). Lock the whole router.
+router.use(requireAuth, requireRole("operations_manager"));
 
 // Rated power assumption for the energy-saving estimate (book §5.4.3).
 // Estimate only, not a measurement — the screen says so clearly.
@@ -10,7 +13,7 @@ const RATED_KW = 2.5; // HVAC + lights per room
 const FUDGE = 0.85;
 
 // GET /analytics/energy — aggregated energy-saving statistics (Table 4.1).
-router.get("/energy", requireAuth, async (_req, res) => {
+router.get("/energy", async (_req, res) => {
   // Sum the time each room spent in EMPTY_POWER_OFF over the last 7 days,
   // derived from relay 'off' -> next relay 'on' (or now) intervals.
   const { rows } = await query(`
@@ -37,7 +40,7 @@ router.get("/energy", requireAuth, async (_req, res) => {
 });
 
 // GET /analytics/response-times — avg ticket resolution time by type.
-router.get("/response-times", requireAuth, async (_req, res) => {
+router.get("/response-times", async (_req, res) => {
   const { rows } = await query(`
     SELECT type,
            AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)))/60 AS avg_minutes,

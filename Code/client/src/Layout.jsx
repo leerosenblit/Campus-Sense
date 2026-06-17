@@ -1,12 +1,15 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { getRole } from "./api.js";
 
-const tabs = [
+const ALL_TABS = [
   { to: "/map", label: "Live Map" },
   { to: "/tickets", label: "Tickets" },
-  { to: "/analytics", label: "Analytics" },
+  { to: "/analytics", label: "Analytics", roles: ["operations_manager"] },
 ];
 
 export default function Layout() {
+  const role = getRole();
+  const tabs = ALL_TABS.filter((t) => !t.roles || t.roles.includes(role));
   return (
     <div className="min-h-screen flex bg-slate-100 text-slate-800">
       <aside className="w-64 bg-slate-800 text-white p-6 flex flex-col">

@@ -68,6 +68,21 @@ class Engine:
         except requests.RequestException as e:
             log.warning("API post %s failed: %s", path, e)
 
+    def _schedule_status(self, room_id: str):
+        """Ask the API whether a class is active / starting soon (FR2).
+
+        Fails SAFE: if the schedule can't be read, assume a class may be active so we
+        do NOT power off a room we're unsure about (never switch off on real people)."""
+        try:
+            r = requests.get(f"{API_BASE}/internal/schedule/{room_id}",
+                             params={"lookahead": LOOKAHEAD_MIN}, timeout=3)
+            r.raise_for_status()
+            d = r.json()
+            return bool(d.get("class_active")), bool(d.get("class_soon"))
+        except requests.RequestException as e:
+            log.warning("schedule check for %s failed (assuming class active): %s", room_id, e)
+            return True, True
+
     def _persist_event(self, room_id, etype, value):
         self._post("/internal/events", {"room_id": room_id, "type": etype, "value": value})
 
@@ -128,8 +143,8 @@ class Engine:
     # ---- periodic evaluation (energy rule) ----
     def _tick(self):
         for st in list(self.rooms.values()):
-            # Schedule integration (FR2) is a Sprint-3 task; for now no class is assumed.
-            class_active, class_soon = False, False
+            # Schedule integration (FR2): never power off during/just before a class.
+            class_active, class_soon = self._schedule_status(st.room_id)
             building, room = st.room_id.split("-", 1)
             cmds = st.evaluate(EMPTY_MINUTES, class_active, class_soon)
             for kind, val in cmds:

@@ -17,9 +17,11 @@ ANOMALY_CONF_THRESHOLD = float(os.getenv("ANOMALY_CONF_THRESHOLD", "0.6"))
 # Heartbeat interval (seconds) so the server knows the unit is alive (book §4.5.1).
 HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "15"))
 
-# Model weight locations (relative to repo root /models).
-YOLO_WEIGHTS = os.getenv("YOLO_WEIGHTS", "../models/yolov5n.pt")
-ANOMALY_WEIGHTS = os.getenv("ANOMALY_WEIGHTS", "../models/anomaly_mobilenet.pth")
+# Model weight locations. Resolved ABSOLUTELY relative to this file (Code/edge/config.py)
+# so they work no matter which directory you launch from. Models live in Code/models/.
+_MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
+YOLO_WEIGHTS = os.getenv("YOLO_WEIGHTS", os.path.join(_MODELS_DIR, "yolov5n.pt"))
+ANOMALY_WEIGHTS = os.getenv("ANOMALY_WEIGHTS", os.path.join(_MODELS_DIR, "anomaly_mobilenet.pth"))
 
 
 def topic(building: str, room: str, leaf: str) -> str:

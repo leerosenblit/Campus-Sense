@@ -25,6 +25,8 @@ from torch import nn, optim
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, models, transforms
 
+import config  # reuse the SAME resolved weights path the edge unit loads from
+
 # Must match pipelines.AnomalyDetector.CLASSES (alphabetical).
 EXPECTED_CLASSES = ["fallen_object", "liquid_spill", "normal"]
 
@@ -41,7 +43,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=15)
     ap.add_argument("--lr", type=float, default=1e-4)  # low LR for fine-tuning (book §5.6.2)
     ap.add_argument("--batch", type=int, default=16)
-    ap.add_argument("--out", default="../models/anomaly_mobilenet.pth")
+    ap.add_argument("--out", default=config.ANOMALY_WEIGHTS,
+                    help="defaults to the exact path the edge unit loads from")
     args = ap.parse_args()
 
     # Heavy augmentation helps on a tiny dataset (book §5.2.2).

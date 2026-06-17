@@ -55,6 +55,32 @@ edge/data/anomaly/
 
 > The image folders are gitignored — they stay on your machine, not in the repo.
 
+### Campus collection checklist (for the data-gathering week)
+
+Use this when walking the campus. Tools to help:
+- `python scripts/collect_frames.py` — webcam capture: press `1`/`2`/`3` to save & label a
+  frame into `fallen_object` / `liquid_spill` / `normal`. Shows live counts.
+- Phone photos work too — just copy them into the matching folder afterwards.
+- `python scripts/check_dataset.py` — run anytime to see counts and whether you're ready.
+
+What to capture (variety is what makes it work):
+
+- **liquid_spill** — water, juice, coffee puddles. Different floor types (tile, vinyl,
+  carpet), different sizes, wet vs. drying, with and without reflections/glare.
+- **fallen_object** — a bag, bottle, book, chair on its side, trash on the floor. Various
+  positions and distances.
+- **normal** — clean floor in many rooms/corridors AND, importantly, **people standing and
+  walking**. This is what stops the model from calling a moving person a "spill" (the exact
+  bug that made us disable detection).
+- Vary **lighting** (daylight, evening, lights on/off) and **camera height/angle** —
+  ideally close to where the real ceiling camera would sit.
+
+Targets: aim for **~500 images per class** (the book's §7.2 goal). Even ~100/class is
+enough to train a first working version and see it switch on.
+
+> Safety: only use water for spills, under supervision, away from electrical outlets
+> (the book did the same in its field test).
+
 ## Step 2 — Make sure the CV libraries are installed
 
 ```powershell

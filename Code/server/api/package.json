@@ -20,5 +20,8 @@
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.11.5",
     "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
   }
 }

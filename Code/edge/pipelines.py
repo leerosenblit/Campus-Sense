@@ -61,7 +61,9 @@ class AnomalyDetector:
     candidate so the temporal filter and alerting path can be exercised.
     """
 
-    CLASSES = ["liquid_spill", "fallen_object", "normal"]
+    # Order MUST match torchvision ImageFolder, which indexes classes alphabetically.
+    # train_anomaly.py trains with this same order, so saved weights load correctly.
+    CLASSES = ["fallen_object", "liquid_spill", "normal"]
 
     def __init__(self, weights: str = config.ANOMALY_WEIGHTS,
                  conf: float = config.ANOMALY_CONF_THRESHOLD):
@@ -73,8 +75,15 @@ class AnomalyDetector:
             import torch  # noqa: F401
             self._load_torch_model(weights)
             self.backend = "mobilenet"
+            self.enabled = True
         except Exception:
-            self.backend = "diff"
+            # No trained weights available. We deliberately do NOT fall back to a
+            # naive background-subtraction guess, because it labels ANY change as a
+            # "spill" (false positives on movement / lighting). Anomaly detection is
+            # disabled until a real model exists (book §7.2). People counting is
+            # unaffected.
+            self.backend = "disabled"
+            self.enabled = False
 
     def _load_torch_model(self, weights: str):
         import torch
@@ -97,7 +106,14 @@ class AnomalyDetector:
         self.baseline = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     def detect(self, frame):
-        """Return (class_name, confidence) or None if nothing significant changed."""
+        """Return (class_name, confidence) or None.
+
+        Returns None whenever anomaly detection is disabled (no trained model) so
+        the unit never raises spill/object alerts it cannot actually recognise.
+        """
+        if not self.enabled:
+            return None
+
         import cv2
         if self.baseline is None:
             self.set_baseline(frame)
@@ -118,16 +134,13 @@ class AnomalyDetector:
         if crop.size == 0:
             return None
 
-        if self.backend == "mobilenet":
-            import torch
-            with torch.no_grad():
-                logits = self._model(self._tf(crop).unsqueeze(0))
-                probs = torch.softmax(logits, dim=1)[0]
-                idx = int(probs.argmax())
-                cls, p = self.CLASSES[idx], float(probs[idx])
-            if cls == "normal" or p < self.conf:
-                return None
-            return cls, p
-
-        # diff fallback: treat a large changed region as a likely spill candidate.
-        return "liquid_spill", min(0.5 + changed_ratio, 0.99)
+        # Only reached when a trained MobileNet model is loaded (self.enabled).
+        import torch
+        with torch.no_grad():
+            logits = self._model(self._tf(crop).unsqueeze(0))
+            probs = torch.softmax(logits, dim=1)[0]
+            idx = int(probs.argmax())
+            cls, p = self.CLASSES[idx], float(probs[idx])
+        if cls == "normal" or p < self.conf:
+            return None
+        return cls, p

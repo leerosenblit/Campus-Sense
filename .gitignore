@@ -1,0 +1,13 @@
+# Repo-root ignores (the app lives under Code/).
+
+# Model weights are large binaries — distribute separately, don't commit.
+models/
+*.pt
+*.onnx
+*.pth
+
+# Safety nets (also covered by Code/.gitignore)
+node_modules/
+.env
+__pycache__/
+.venv/

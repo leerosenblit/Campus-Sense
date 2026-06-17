@@ -39,6 +39,16 @@ def test_alert_blocks_power_off():
     assert st.evaluate(empty_minutes=10, class_active=False, class_soon=False) == []
 
 
+def test_anomaly_creates_one_ticket_per_episode():
+    st = sm.RoomState(room_id="ficus-301")
+    assert st.on_anomaly() is True   # first detection -> new alert -> make ticket
+    assert st.on_anomaly() is False  # repeated detections -> no new ticket
+    assert st.on_anomaly() is False
+    # after the room is occupied again, the alert clears and a later spill is "new"
+    st.on_occupancy(2, empty_minutes=10)
+    assert st.on_anomaly() is True
+
+
 def test_occupancy_turns_systems_back_on():
     st = sm.RoomState(room_id="ficus-301", systems_on=False)
     cmds = st.on_occupancy(3, empty_minutes=10)

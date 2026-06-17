@@ -58,15 +58,20 @@ cleaner notified*, plus the *QR student reporting* flow and the ticket board.
 
 Covers book: §5.2.2, §5.4.2, §5.4.3 (board), §5.5, Use Cases B & C, FR4/FR5/FR6 (tickets).
 
-- [ ] Edge: anomaly pipeline (background subtraction → MobileNetV3-small classifier),
-      two-consecutive-frame filter (§5.2.2), publish `anomaly` over MQTT
-- [ ] Decision engine: route anomalies → create ticket via internal API (`POST /internal/events`)
-- [ ] API: `GET/POST /tickets`, `PATCH /tickets/:id` (assign/resolve/note)
-- [ ] Client: `/tickets` Kanban board (Open / In Progress / Resolved) with drag-and-drop
-- [ ] Client: cleaner mobile view (list + "mark done") + Web Push notification
-- [ ] Client: student QR form (`/report?room=...`), 3-tap submit, no login (NFR5)
-- [ ] Generate per-room QR codes (`scripts/make_qr.py`)
-- **Deliverable:** spill → cleaner push + ticket on board; QR scan → ticket in seconds.
+- [~] Edge: anomaly pipeline + MobileNetV3-small classifier scaffolding done
+      (`train_anomaly.py`, dataset structure, two-consecutive-frame filter). Detection
+      stays **disabled until real weights are trained** — no false-positive guessing.
+- [x] Decision engine: route anomalies → create ticket; **one ticket per hazard episode**
+      (dedup on alert transition)
+- [x] API: `GET/POST /tickets`, `PATCH /tickets/:id` (assign/resolve/note) — exercised end-to-end
+- [x] Client: `/tickets` Kanban board (Open / In Progress / Resolved) with drag-and-drop
+      (`@hello-pangea/dnd`, the maintained React-18 fork of react-beautiful-dnd)
+- [x] Client: cleaner mobile view (list + "mark done") + **in-app browser notifications**
+      (full offline Web Push/VAPID deferred to hardening)
+- [x] Client: student QR form (`/report?room=...`), 3-tap submit, no login (NFR5)
+- [x] Generate per-room QR codes (`scripts/make_qr.py` → `qr/*.png`)
+- **Deliverable:** spill → cleaner notification + ticket on board; QR scan → ticket in seconds.
+      (anomaly trigger needs trained weights; manual QR + MQTT anomaly both verified)
 
 ## Sprint 3 — Auth, analytics, hardening & demo
 **Goal:** make it a presentable prototype: secured, measured, tested, packaged.

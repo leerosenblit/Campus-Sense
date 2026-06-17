@@ -24,6 +24,14 @@ models/*.pt
 models/*.onnx
 models/*.pth
 
+# Generated QR codes
+qr/
+
+# Training images (large; keep the READMEs)
+edge/data/**/*.jpg
+edge/data/**/*.jpeg
+edge/data/**/*.png
+
 # OS
 .DS_Store
 Thumbs.db

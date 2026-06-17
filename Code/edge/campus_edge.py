@@ -118,8 +118,10 @@ class EdgeUnit:
             cap.release()
 
     def _run_simulated(self):
-        """Publish a synthetic occupancy pattern so the whole pipeline can be demoed."""
-        import random
+        """Publish a synthetic occupancy pattern so the whole pipeline can be demoed.
+
+        Occupancy only — no synthetic anomalies (the anomaly model is not trained yet).
+        """
         pattern = [3, 3, 3, 2, 1, 0, 0, 0, 0, 0, 0]  # room empties out then stays empty
         i = 0
         while True:
@@ -128,10 +130,6 @@ class EdgeUnit:
                 self._publish("occupancy", {"count": count})
                 self.last_count = count
                 log.info("[SIM] occupancy=%d", count)
-            # occasionally simulate a spill once the room is empty
-            if count == 0 and random.random() < 0.15:
-                self._publish("anomaly", {"class": "liquid_spill", "conf": 0.83})
-                log.info("[SIM] ANOMALY liquid_spill")
             i += 1
             time.sleep(2.0)
 

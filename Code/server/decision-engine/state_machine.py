@@ -49,10 +49,14 @@ class RoomState:
             self.status = RECENTLY_EMPTY
         return cmds
 
-    def on_anomaly(self):
+    def on_anomaly(self) -> bool:
+        """Mark the room as alerting. Returns True only on the transition into the
+        alert state, so the caller creates exactly ONE ticket per hazard episode
+        instead of one per detected frame."""
+        is_new = not self.alert_active
         self.alert_active = True
         self.status = ALERT_ACTIVE
-        return []
+        return is_new
 
     def clear_alert(self):
         self.alert_active = False

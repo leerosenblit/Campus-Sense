@@ -113,8 +113,9 @@ class Engine:
 
         elif leaf == "anomaly":
             self._persist_event(room_id, "anomaly", payload)
-            st.on_anomaly()
-            self._create_ticket(room_id, payload.get("class"), payload.get("conf"))
+            is_new_alert = st.on_anomaly()
+            if is_new_alert:  # one ticket per hazard episode, not per frame
+                self._create_ticket(room_id, payload.get("class"), payload.get("conf"))
             self._report_state(st)
 
         elif leaf == "relay":

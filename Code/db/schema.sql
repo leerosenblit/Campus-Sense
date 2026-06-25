@@ -15,11 +15,12 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS rooms (
-    id        TEXT PRIMARY KEY,               -- e.g. 'ficus-301'
-    building  TEXT NOT NULL,
+    id        TEXT PRIMARY KEY,               -- e.g. 'ficus-301', 'kirya-H1', 'mapat-Tamar'
+    building  TEXT NOT NULL,                  -- short id: ficus | kirya | mapat (UI maps to display name)
     floor     INT,
     name      TEXT NOT NULL,
-    -- live state mirrored from the decision engine for fast dashboard reads
+    -- live state mirrored from the decision engine for fast dashboard reads.
+    -- These are INTERNAL codes; the dashboard maps them to friendly labels (client/src/labels.js).
     status    TEXT NOT NULL DEFAULT 'unknown',-- OCCUPIED | RECENTLY_EMPTY | EMPTY_POWER_OFF | ALERT_ACTIVE
     occupancy INT  NOT NULL DEFAULT 0,
     systems_on BOOLEAN NOT NULL DEFAULT TRUE,

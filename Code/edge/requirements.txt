@@ -6,8 +6,11 @@ numpy>=1.24,<2.0
 python-dotenv==1.0.1
 
 # Computer-vision models. Heavy; install when running real detection.
-# YOLOv5n person counting + MobileNetV3 anomaly classifier.
+# YOLOv8n person counting + MobileNetV3 anomaly classifier.
 # Comment these out to run in --simulate mode without them.
-ultralytics==8.2.0        # provides YOLO; pulls in torch
+# NOTE: ultralytics must be >=8.3 to load weights under PyTorch >=2.6, which
+# defaults torch.load(weights_only=True). 8.2.0 silently fails to load and the
+# pipeline falls back to the slow OpenCV-HOG detector.
+ultralytics>=8.3.0        # provides YOLO; pulls in torch
 torch==2.2.2 ; platform_system != "Darwin"
 torchvision==0.17.2 ; platform_system != "Darwin"

@@ -1,3 +1,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html { color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  body {
+    @apply bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+@layer components {
+  /* A reusable surface card so light/dark stays consistent everywhere. */
+  .card {
+    @apply bg-white dark:bg-slate-900 dark:border dark:border-slate-800 rounded-xl shadow-sm;
+  }
+}

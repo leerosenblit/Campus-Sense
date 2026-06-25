@@ -1,12 +1,12 @@
 """Tiny demo helper: pretend a room fills up, then empties.
 
-Publishes occupancy over MQTT so you can watch a room go
-OCCUPIED (green) -> EMPTY_POWER_OFF (blue) on the dashboard,
-without needing a webcam.
+Publishes occupancy over MQTT so you can watch a room go from "In use" (green)
+to "Empty - saving" (blue) on the dashboard, without needing a webcam.
 
 Usage (from the repo root, with the broker running):
     python scripts/demo_occupancy.py                 # uses room ficus-302
     python scripts/demo_occupancy.py ficus-301 5     # room ficus-301, 5 people
+    python scripts/demo_occupancy.py kirya-H2 12     # Kirya hall H2, 12 people
 """
 import json
 import sys
@@ -31,7 +31,7 @@ print(f"Room {room}: everybody leaves (count = 0)...")
 c.publish(topic, json.dumps({"count": 0}))
 time.sleep(2)
 
-print("Done. Watch the dashboard: the room should turn blue (EMPTY_POWER_OFF)")
+print('Done. Watch the dashboard: the room should turn blue ("Empty - saving")')
 print("within ~10s (engine tick). If it stays green, the engine isn't running.")
 c.loop_stop()
 c.disconnect()

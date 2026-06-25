@@ -59,7 +59,7 @@ status; an "anomaly cleared" signal from the edge. *Effort:* small–medium.
 
 *Ties occupancy to the class schedule (FR2).*
 
-1. **Pre-condition.** The schedule says a class is booked in `oren-lab10` from 14:00, and
+1. **Pre-condition.** The schedule says a class is booked in `ficus-201` from 14:00, and
    the system pre-warms the room (turns systems on a few minutes early, as today).
 2. **Trigger.** By 14:15 the room has still counted **zero** people — the class did not
    take place (cancelled, moved, lecturer absent).

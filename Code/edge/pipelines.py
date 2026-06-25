@@ -23,8 +23,12 @@ class PeopleCounter:
     """
 
     def __init__(self, weights: str = config.YOLO_WEIGHTS,
-                 conf: float = config.PERSON_CONF_THRESHOLD):
+                 conf: float = config.PERSON_CONF_THRESHOLD,
+                 device: str = config.YOLO_DEVICE,
+                 imgsz: int = config.YOLO_IMGSZ):
         self.conf = conf
+        self.imgsz = imgsz
+        self.device = self._resolve_device(device)
         self.backend = None
         self._model = None
         try:
@@ -32,22 +36,53 @@ class PeopleCounter:
             self._model = YOLO(weights)
             self.backend = "yolo"
         except Exception:
-            # Fallback: OpenCV HOG + SVM people detector.
+            # Fallback: OpenCV HOG + SVM people detector. Much slower and less
+            # accurate; only used when YOLO weights/torch are unavailable.
             import cv2
             self._hog = cv2.HOGDescriptor()
             self._hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
             self.backend = "hog"
 
+    @staticmethod
+    def _resolve_device(device: str) -> str:
+        """Map "auto" to the fastest backend available (Metal GPU on Apple Silicon)."""
+        if device != "auto":
+            return device
+        try:
+            import torch
+            if torch.backends.mps.is_available():
+                return "mps"
+            if torch.cuda.is_available():
+                return "cuda:0"
+        except Exception:
+            pass
+        return "cpu"
+
     def count(self, frame) -> int:
+        return len(self.detect_boxes(frame))
+
+    def detect_boxes(self, frame):
+        """Return person bounding boxes as a list of (x, y, w, h).
+
+        count() is just len() of this. Boxes are normally discarded for privacy
+        (book §5.2.1); they are surfaced only so the optional --preview window can
+        draw them. They are never published over MQTT.
+        """
         if self.backend == "yolo":
-            # class 0 == 'person' in COCO. Discard boxes immediately (book §5.2.1).
-            results = self._model.predict(frame, conf=self.conf, classes=[0], verbose=False)
-            return int(sum(len(r.boxes) for r in results))
+            # class 0 == 'person' in COCO.
+            results = self._model.predict(frame, conf=self.conf, classes=[0],
+                                          device=self.device, imgsz=self.imgsz,
+                                          verbose=False)
+            boxes = []
+            for r in results:
+                for x1, y1, x2, y2 in r.boxes.xyxy.tolist():
+                    boxes.append((int(x1), int(y1), int(x2 - x1), int(y2 - y1)))
+            return boxes
         # HOG fallback
         import cv2
         rects, _ = self._hog.detectMultiScale(frame, winStride=(8, 8))
         # crude non-maximum suppression by area overlap is skipped for the prototype
-        return len(rects)
+        return [(int(x), int(y), int(w), int(h)) for (x, y, w, h) in rects]
 
 
 class AnomalyDetector:

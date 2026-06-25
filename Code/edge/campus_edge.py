@@ -26,12 +26,17 @@ log = logging.getLogger("edge")
 
 
 class EdgeUnit:
-    def __init__(self, building: str, room: str, simulate: bool = False):
+    def __init__(self, building: str, room: str, simulate: bool = False,
+                 preview: bool = False):
         self.building = building
         self.room = room
         self.simulate = simulate
+        self.preview = preview           # draw a local window of what the camera sees
         self.relay = SimulatedRelay()
-        self.last_count = -1
+        self.last_count = -1             # last count actually published
+        self.last_boxes = []             # most recent person boxes, for --preview only
+        self._pending_count = -1         # candidate count awaiting confirmation
+        self._pending_streak = 0         # consecutive frames the candidate has held
         self.anomaly_streak = 0          # consecutive-frame filter (book §5.2.2)
         self.last_anomaly_cls = None
 
@@ -47,8 +52,9 @@ class EdgeUnit:
             from pipelines import PeopleCounter, AnomalyDetector
             self.counter = PeopleCounter()
             self.anomaly = AnomalyDetector()
-            log.info("CV backends: people=%s anomaly=%s",
-                     self.counter.backend, self.anomaly.backend)
+            dev = self.counter.device if self.counter.backend == "yolo" else "cpu"
+            log.info("CV backends: people=%s (%s) anomaly=%s",
+                     self.counter.backend, dev, self.anomaly.backend)
 
     # ---- MQTT plumbing ----
     def _on_connect(self, client, userdata, flags, rc):
@@ -57,11 +63,18 @@ class EdgeUnit:
         log.info("Connected to broker, subscribed to %s", relay_topic)
 
     def _on_message(self, client, userdata, msg):
-        """Server publishes power on/off commands on the relay topic."""
+        """Server publishes power on/off commands on the relay topic.
+
+        We subscribe to the same relay topic we echo our confirmed state on, so we
+        MUST ignore our own echoes — otherwise the echo (which has no "on" key) gets
+        re-read as a command, re-echoed, and ping-pongs into a message storm.
+        Commands carry {"on": bool}; state echoes carry {"state": bool}.
+        """
         try:
             payload = json.loads(msg.payload.decode())
-            want_on = bool(payload.get("on", True))
-            self.relay.set(want_on)
+            if "on" not in payload:
+                return  # state echo (or anything that isn't a command) — ignore
+            self.relay.set(bool(payload["on"]))
             # Confirm by echoing the new relay state (book §4.2).
             self._publish("relay", {"state": self.relay.state})
         except Exception as e:  # noqa: BLE001
@@ -78,8 +91,19 @@ class EdgeUnit:
 
     # ---- main processing ----
     def _process_frame(self, frame):
-        count = self.counter.count(frame)
-        if count != self.last_count:
+        self.last_boxes = self.counter.detect_boxes(frame)
+        count = len(self.last_boxes)
+
+        # Debounce: a count must hold for OCCUPANCY_CONFIRM_FRAMES consecutive
+        # frames before we publish it, so a one-frame detection dropout doesn't
+        # flap the dashboard between 0 and 1.
+        if count == self._pending_count:
+            self._pending_streak += 1
+        else:
+            self._pending_count = count
+            self._pending_streak = 1
+        if (self._pending_streak >= config.OCCUPANCY_CONFIRM_FRAMES
+                and count != self.last_count):
             self._publish("occupancy", {"count": count})
             self.last_count = count
             log.info("occupancy=%d", count)
@@ -100,11 +124,28 @@ class EdgeUnit:
             self.anomaly_streak = 0
             self.last_anomaly_cls = None
 
+    WINDOW = "Campus-Sense camera (press q to close)"
+
+    def _draw_preview(self, cv2, frame):
+        """Render what the camera sees: person boxes + live count overlay.
+
+        Local debug view only — these pixels never leave the machine (NFR3).
+        """
+        for (x, y, w, h) in self.last_boxes:
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        label = f"{self.building}/{self.room}   people={len(self.last_boxes)}   [{self.counter.backend}]"
+        cv2.putText(frame, label, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(frame, "preview only - not published. press q to close.", (10, 54),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        cv2.imshow(self.WINDOW, frame)
+
     def _run_camera(self):
         import cv2
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
             raise RuntimeError("Could not open webcam. Use --simulate to run without one.")
+        if self.preview:
+            log.info("Preview window enabled — focus it and press q to close.")
         try:
             while True:
                 ok, frame = cap.read()
@@ -112,10 +153,20 @@ class EdgeUnit:
                     log.error("Camera read failed")
                     break
                 self._process_frame(frame)
+                if self.preview:
+                    self._draw_preview(cv2, frame)
+                    if (cv2.waitKey(1) & 0xFF) == ord("q"):
+                        log.info("Preview closed by user")
+                        break
+                    # Preview wants a smooth feed, so detect every frame at camera
+                    # rate instead of throttling to the energy-saving 2 fps.
+                    continue
                 fps = config.EDGE_FPS if self.last_count > 0 else config.IDLE_FPS
                 time.sleep(1.0 / fps)
         finally:
             cap.release()
+            if self.preview:
+                cv2.destroyAllWindows()
 
     def _run_simulated(self):
         """Publish a synthetic occupancy pattern so the whole pipeline can be demoed.
@@ -156,8 +207,11 @@ def main():
     ap.add_argument("--room", default="301")
     ap.add_argument("--simulate", action="store_true",
                     help="Run without a webcam / CV models (publishes synthetic data)")
+    ap.add_argument("--preview", action="store_true",
+                    help="Open a local window showing the live camera + detection boxes")
     args = ap.parse_args()
-    EdgeUnit(args.building, args.room, simulate=args.simulate).start()
+    EdgeUnit(args.building, args.room, simulate=args.simulate,
+             preview=args.preview).start()
 
 
 if __name__ == "__main__":

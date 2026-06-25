@@ -1,20 +1,48 @@
 import { io } from "socket.io-client";
 
-// Auth token kept in memory (not localStorage) to reduce XSS risk (book §5.4).
-let token = null;
-let role = null;
-export const setToken = (t) => { token = t; };
-export const getToken = () => token;
-export const setRole = (r) => { role = r; };
-export const getRole = () => role;
-export const isLoggedIn = () => Boolean(token);
+// Session is persisted in localStorage so a refresh doesn't log the user out.
+// (Trade-off vs. in-memory: a JWT in localStorage is readable by XSS. Acceptable
+// for this prototype; a hardened build would use an httpOnly cookie + CSRF token.)
+const KEY = "cs-session";
+
+function loadSession() {
+  try {
+    return JSON.parse(localStorage.getItem(KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+let session = loadSession(); // { token, role, email }
+
+function saveSession(s) {
+  session = s;
+  if (s && s.token) localStorage.setItem(KEY, JSON.stringify(s));
+  else localStorage.removeItem(KEY);
+}
+
+export const getToken = () => session.token || null;
+export const getRole = () => session.role || null;
+export const getEmail = () => session.email || null;
+export const isLoggedIn = () => Boolean(session.token);
+
+export function logout() {
+  saveSession({});
+  // Drop any role-scoped socket state by reconnecting fresh.
+  try { socket.disconnect(); socket.connect(); } catch { /* noop */ }
+}
 
 const BASE = "/api";
 
 export async function apiFetch(path, opts = {}) {
   const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (session.token) headers.Authorization = `Bearer ${session.token}`;
   const res = await fetch(BASE + path, { ...opts, headers });
+  if (res.status === 401) {
+    // Token missing/expired — clear the stale session so guards redirect to login.
+    logout();
+    throw new Error("session expired");
+  }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
   return res.json();
 }
@@ -24,8 +52,7 @@ export async function login(email, password) {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
-  setToken(data.token);
-  setRole(data.role);
+  saveSession({ token: data.token, role: data.role, email: data.email });
   return data;
 }
 

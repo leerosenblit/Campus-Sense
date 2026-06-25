@@ -6,7 +6,7 @@ so the form opens with the room already filled in.
 
 Usage:
     pip install qrcode[pil]
-    python scripts/make_qr.py ficus-301 ficus-302 oren-lab10 --base http://localhost:5173
+    python scripts/make_qr.py ficus-301 kirya-H1 mapat-Tamar --base http://localhost:5173
 """
 import argparse
 

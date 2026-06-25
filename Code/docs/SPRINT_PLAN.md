@@ -14,7 +14,7 @@ webcam** so the full software pipeline still runs and demos end-to-end.
 ```
  Edge (Python)                Server                          Clients (React)
  ─────────────                ──────────────────────────      ──────────────────
- webcam + YOLOv5n   ──MQTT──▶ Mosquitto broker                Manager dashboard
+ webcam + YOLOv8n   ──MQTT──▶ Mosquitto broker                Manager dashboard
  anomaly classifier          Decision engine (Python)         Cleaner mobile view
  simulated relay    ◀──MQTT── REST API (Node/Express+Socket.IO)Student QR form
                              PostgreSQL
@@ -44,7 +44,7 @@ Covers book: §4.1–4.3, §5.2.1, §5.3, §5.6.3, Use Case A, FR1/FR2/FR3, NFR2
 - [ ] Monorepo scaffold (`edge/ server/ client/ db/ models/ docs/`) + `docker-compose.yml`
 - [ ] `docker-compose`: Mosquitto + PostgreSQL running locally
 - [ ] DB schema: `rooms, events, tickets, users, schedules, roles` (§4.6)
-- [ ] Edge: webcam capture loop + YOLOv5n person counting + publish `occupancy` over MQTT
+- [ ] Edge: webcam capture loop + YOLOv8n person counting + publish `occupancy` over MQTT
 - [ ] Edge: subscribe to `relay` topic + **simulated relay** that echoes state back
 - [ ] API: Express + Socket.IO, `GET /rooms`, `GET /rooms/:id/history`, DB pool
 - [ ] Decision engine: subscribe to all room topics, persist events, per-room state machine

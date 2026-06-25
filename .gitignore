@@ -11,3 +11,6 @@ node_modules/
 .env
 __pycache__/
 .venv/
+
+# macOS
+.DS_Store

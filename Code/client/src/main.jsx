@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import "./theme.js"; // applies saved/OS theme before first paint (no flash)
 import "./index.css";
 
 import Layout from "./Layout.jsx";
@@ -19,10 +20,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         {/* Public student QR form — no login (book §4.5.3) */}
         <Route path="/report" element={<ReportPage />} />
         <Route path="/login" element={<LoginPage />} />
-        {/* Cleaner mobile view */}
-        <Route path="/cleaner" element={<CleanerPage />} />
-        {/* Manager dashboard — requires login (FR7) */}
+        {/* Authenticated areas (FR7) */}
         <Route element={<RequireAuth />}>
+          {/* Cleaner mobile view — its own full-screen mobile layout, no sidebar */}
+          <Route path="/cleaner" element={<CleanerPage />} />
+          {/* Manager / IT desktop dashboard */}
           <Route element={<Layout />}>
             <Route path="/map" element={<MapPage />} />
             <Route path="/tickets" element={<TicketsPage />} />

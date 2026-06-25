@@ -35,3 +35,6 @@ edge/data/**/*.png
 # OS
 .DS_Store
 Thumbs.db
+
+# Demo recordings (large binaries)
+demo/

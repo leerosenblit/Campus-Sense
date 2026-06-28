@@ -10,7 +10,7 @@ import sys
 
 _CODE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(_CODE, "edge", "data", "anomaly")
-CLASSES = ["fallen_object", "liquid_spill", "normal"]
+CLASSES = ["liquid_spill", "normal"]
 IMG_EXT = (".jpg", ".jpeg", ".png", ".bmp")
 
 MIN_OK = 50      # bare minimum to experiment

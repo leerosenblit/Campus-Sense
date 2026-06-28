@@ -7,7 +7,6 @@ Dataset layout (torchvision ImageFolder — folder name == class label, indexed
 ALPHABETICALLY, which is why pipelines.AnomalyDetector.CLASSES is in that order):
 
     edge/data/anomaly/
-        fallen_object/   *.jpg
         liquid_spill/    *.jpg
         normal/          *.jpg
 
@@ -28,7 +27,7 @@ from torchvision import datasets, models, transforms
 import config  # reuse the SAME resolved weights path the edge unit loads from
 
 # Must match pipelines.AnomalyDetector.CLASSES (alphabetical).
-EXPECTED_CLASSES = ["fallen_object", "liquid_spill", "normal"]
+EXPECTED_CLASSES = ["liquid_spill", "normal"]
 
 
 def build_model(num_classes: int):

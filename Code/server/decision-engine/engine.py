@@ -30,7 +30,6 @@ LOOKAHEAD_MIN = int(os.getenv("SCHEDULE_LOOKAHEAD_MINUTES", "15"))
 
 ANOMALY_TO_TICKET = {
     "liquid_spill": "spill",
-    "fallen_object": "fallen_object",
 }
 
 
@@ -99,10 +98,20 @@ class Engine:
         })
         log.info("ticket created from anomaly %s in %s", anomaly_cls, room_id)
 
+    def _create_lost_ticket(self, room_id, item, conf):
+        """Use Case D: open a lost-and-found ticket for an item left in an empty room."""
+        note = f"Forgotten item: {item}" if item else "Forgotten item left behind"
+        self._post("/tickets", {
+            "room_id": room_id, "type": "lost_item", "source": "anomaly",
+            "note": note, "confidence": conf,
+        })
+        log.info("lost-and-found ticket created (%s) in %s", item, room_id)
+
     # ---- MQTT ----
     def _on_connect(self, client, userdata, flags, rc):
         client.subscribe("campus/+/+/occupancy")
         client.subscribe("campus/+/+/anomaly")
+        client.subscribe("campus/+/+/forgotten")
         client.subscribe("campus/+/+/relay")
         client.subscribe("campus/+/+/heartbeat")
         log.info("connected to broker, subscribed to campus topics")
@@ -131,6 +140,15 @@ class Engine:
             is_new_alert = st.on_anomaly()
             if is_new_alert:  # one ticket per hazard episode, not per frame
                 self._create_ticket(room_id, payload.get("class"), payload.get("conf"))
+            self._report_state(st)
+
+        elif leaf == "forgotten":
+            # Use Case D: item left behind (present=true) or retrieved (present=false).
+            self._persist_event(room_id, "forgotten", payload)
+            present = bool(payload.get("present", True))
+            is_new = st.on_forgotten_item(present)
+            if is_new:  # one lost-and-found ticket per episode, not per frame
+                self._create_lost_ticket(room_id, payload.get("item"), payload.get("conf"))
             self._report_state(st)
 
         elif leaf == "relay":

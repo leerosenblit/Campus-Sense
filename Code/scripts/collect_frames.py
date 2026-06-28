@@ -2,12 +2,11 @@
 
 Opens the webcam and lets you label & save frames into the training folders with a
 single key press. Handy for capturing lots of `normal` frames (empty floor, people
-walking) and a few staged `liquid_spill` / `fallen_object` shots.
+walking) and a few staged `liquid_spill` shots.
 
 Keys:
-    1  save current frame -> fallen_object/
-    2  save current frame -> liquid_spill/
-    3  save current frame -> normal/
+    1  save current frame -> liquid_spill/
+    2  save current frame -> normal/
     q  quit
 
 Files are saved to edge/data/anomaly/<class>/<timestamp>.jpg. Run from anywhere:
@@ -22,7 +21,7 @@ import cv2
 _CODE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(_CODE, "edge", "data", "anomaly")
 
-KEYS = {ord("1"): "fallen_object", ord("2"): "liquid_spill", ord("3"): "normal"}
+KEYS = {ord("1"): "liquid_spill", ord("2"): "normal"}
 
 
 def counts():
@@ -41,7 +40,7 @@ def main():
     if not cap.isOpened():
         raise SystemExit("Could not open webcam.")
 
-    print("Capture tool ready. Keys: 1=fallen_object  2=liquid_spill  3=normal  q=quit")
+    print("Capture tool ready. Keys: 1=liquid_spill  2=normal  q=quit")
     saved = 0
     while True:
         ok, frame = cap.read()
@@ -49,10 +48,10 @@ def main():
             break
 
         c = counts()
-        overlay = f"1:fallen={c['fallen_object']}  2:spill={c['liquid_spill']}  3:normal={c['normal']}"
+        overlay = f"1:spill={c['liquid_spill']}  2:normal={c['normal']}"
         view = frame.copy()
         cv2.putText(view, overlay, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        cv2.putText(view, "1/2/3 = save & label, q = quit", (10, 60),
+        cv2.putText(view, "1/2 = save & label, q = quit", (10, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
         cv2.imshow("Campus-Sense dataset capture", view)
 

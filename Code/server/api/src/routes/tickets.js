@@ -26,7 +26,7 @@ export default function ticketRoutes(io) {
 
   const createSchema = Joi.object({
     room_id: Joi.string().required(),
-    type: Joi.string().valid("projector", "ac", "lights", "spill", "fallen_object", "other").required(),
+    type: Joi.string().valid("projector", "ac", "lights", "spill", "lost_item", "other").required(),
     source: Joi.string().valid("qr", "anomaly").default("qr"),
     note: Joi.string().allow("").max(500),
     confidence: Joi.number().min(0).max(1).optional(),

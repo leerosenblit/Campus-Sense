@@ -95,6 +95,73 @@ test("PATCH /tickets requires auth", async () => {
   assert.equal(res.status, 401);
 });
 
+test("schedule CRUD: manager creates/edits/deletes, cleaner is blocked (FR2/FR7)", async () => {
+  const klass = {
+    room_id: ROOM,
+    course_id: "TEST-101 Integration",
+    day_of_week: 1, // Monday
+    start_time: "08:00",
+    end_time: "09:30",
+  };
+
+  // Reads require auth.
+  assert.equal((await request(app).get("/schedules")).status, 401);
+
+  // Cleaner cannot create (manager-only write).
+  const cleaner = await request(app).post("/auth/login").send(creds(CLEANER));
+  const blocked = await request(app)
+    .post("/schedules")
+    .set("Authorization", `Bearer ${cleaner.body.token}`)
+    .send(klass);
+  assert.equal(blocked.status, 403);
+
+  // Manager creates.
+  const created = await request(app)
+    .post("/schedules")
+    .set("Authorization", `Bearer ${managerToken}`)
+    .send(klass);
+  assert.equal(created.status, 201);
+  const id = created.body.id;
+
+  // Invalid time range is rejected.
+  const bad = await request(app)
+    .post("/schedules")
+    .set("Authorization", `Bearer ${managerToken}`)
+    .send({ ...klass, end_time: "07:00" });
+  assert.equal(bad.status, 400);
+
+  // Manager edits.
+  const edited = await request(app)
+    .put(`/schedules/${id}`)
+    .set("Authorization", `Bearer ${managerToken}`)
+    .send({ ...klass, course_id: "TEST-101 Edited" });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.course_id, "TEST-101 Edited");
+
+  // Manager deletes.
+  const del = await request(app)
+    .delete(`/schedules/${id}`)
+    .set("Authorization", `Bearer ${managerToken}`);
+  assert.equal(del.status, 204);
+});
+
+test("forgotten-item flow: engine event creates a lost_item ticket (Use Case D)", async () => {
+  // The engine persists a 'forgotten' event and opens a lost-and-found ticket.
+  const evt = await request(app)
+    .post("/internal/events")
+    .send({ room_id: ROOM, type: "forgotten", value: { item: "backpack", present: true } });
+  assert.equal(evt.status, 201);
+
+  const created = await request(app)
+    .post("/tickets")
+    .send({ room_id: ROOM, type: "lost_item", source: "anomaly", note: "Forgotten item: backpack", confidence: 0.8 });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.type, "lost_item");
+
+  const list = await request(app).get("/tickets?type=lost_item").set("Authorization", `Bearer ${managerToken}`);
+  assert.ok(list.body.some((t) => t.id === created.body.id));
+});
+
 test("analytics is manager-only (RBAC)", async () => {
   const noTok = await request(app).get("/analytics/energy");
   assert.equal(noTok.status, 401);

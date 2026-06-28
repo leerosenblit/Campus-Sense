@@ -9,6 +9,7 @@ const TONE = {
   amber: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
   blue:  "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
   red:   "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  violet: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
   slate: "bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300",
 };
 const CARD_ACCENT = {
@@ -16,6 +17,7 @@ const CARD_ACCENT = {
   amber: "border-l-amber-500",
   blue:  "border-l-blue-500",
   red:   "border-l-red-500 ring-1 ring-red-300 dark:ring-red-500/40",
+  violet: "border-l-violet-500",
   slate: "border-l-slate-300 dark:border-l-slate-700",
 };
 

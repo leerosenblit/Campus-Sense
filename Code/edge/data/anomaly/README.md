@@ -1,15 +1,17 @@
 # Anomaly training data
 
 Put labelled floor images here, one folder per class. Folder names are the labels and
-**must** be exactly these three (torchvision indexes them alphabetically, which is the
+**must** be exactly these two (torchvision indexes them alphabetically, which is the
 order `pipelines.AnomalyDetector.CLASSES` expects):
 
 ```
 data/anomaly/
-├── fallen_object/   # chairs/objects on the floor
 ├── liquid_spill/    # water, juice, coffee on different surfaces
-└── normal/          # clean floor, people walking — anything that is NOT a hazard
+└── normal/          # clean floor, people walking — anything that is NOT a spill
 ```
+
+This is a binary spill detector (spill vs. not-spill). Forgotten items (bags, laptops)
+are handled separately by the YOLO object detector — they do NOT belong here.
 
 Guidance from the project book:
 - Aim for **≥ 500 images per class** in varied lighting and floor surfaces (§7.2).

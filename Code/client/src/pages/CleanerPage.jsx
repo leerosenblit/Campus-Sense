@@ -8,7 +8,7 @@ import {
 } from "../icons.jsx";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 
-const CLEANING_TYPES = ["spill", "fallen_object"];
+const CLEANING_TYPES = ["spill", "lost_item"];
 
 // Standard per-room cleaning checklist. Completion is stored locally per day, so it
 // naturally resets each morning. (No backend table needed for the prototype.)
@@ -31,6 +31,7 @@ const TONE = {
   amber: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
   blue:  "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
   red:   "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  violet: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
   slate: "bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300",
 };
 

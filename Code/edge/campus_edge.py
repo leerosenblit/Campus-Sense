@@ -39,6 +39,10 @@ class EdgeUnit:
         self._pending_streak = 0         # consecutive frames the candidate has held
         self.anomaly_streak = 0          # consecutive-frame filter (book §5.2.2)
         self.last_anomaly_cls = None
+        # Forgotten-item detection (Use Case D), only active while the room is empty.
+        self._forgotten_streak = 0
+        self._forgotten_item = None
+        self._forgotten_published = False
 
         # MQTT
         self.client = mqtt.Client(client_id=f"edge-{building}-{room}")
@@ -108,6 +112,8 @@ class EdgeUnit:
             self.last_count = count
             log.info("occupancy=%d", count)
 
+        self._detect_forgotten_item(frame)
+
         result = self.anomaly.detect(frame)
         if result is not None:
             cls, conf = result
@@ -123,6 +129,46 @@ class EdgeUnit:
         else:
             self.anomaly_streak = 0
             self.last_anomaly_cls = None
+
+    def _detect_forgotten_item(self, frame):
+        """Use Case D: a personal item left behind in an EMPTY room.
+
+        Only runs when the confirmed count is 0. The same item must persist for
+        FORGOTTEN_CONFIRM_FRAMES consecutive frames before we alert (filters a
+        one-frame false positive). We publish once when it appears and once when it
+        is gone; the server holds the room's power on until then. Privacy (NFR3):
+        we publish the item TYPE only — never the image.
+        """
+        if self.last_count != 0:
+            # Room occupied (or count not yet confirmed empty): reset. The server
+            # clears the forgotten flag itself once occupancy > 0.
+            self._forgotten_streak = 0
+            self._forgotten_item = None
+            self._forgotten_published = False
+            return
+
+        items = self.counter.detect_items(frame, conf=config.FORGOTTEN_CONF_THRESHOLD)
+        top = max(items, key=lambda it: it[1]) if items else None
+        if top is not None:
+            name, conf = top
+            if name == self._forgotten_item:
+                self._forgotten_streak += 1
+            else:
+                self._forgotten_item = name
+                self._forgotten_streak = 1
+            if (self._forgotten_streak >= config.FORGOTTEN_CONFIRM_FRAMES
+                    and not self._forgotten_published):
+                self._publish("forgotten", {"item": name, "conf": round(conf, 3), "present": True})
+                self._forgotten_published = True
+                log.info("FORGOTTEN ITEM %s (%.2f)", name, conf)
+        else:
+            # Nothing on the floor now. If we'd alerted, tell the server it's gone.
+            if self._forgotten_published:
+                self._publish("forgotten", {"present": False})
+                log.info("forgotten item cleared")
+            self._forgotten_streak = 0
+            self._forgotten_item = None
+            self._forgotten_published = False
 
     WINDOW = "Campus-Sense camera (press q to close)"
 

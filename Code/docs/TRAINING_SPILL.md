@@ -6,7 +6,7 @@ Everything is already wired — you only need to collect images and run one comm
 
 ## How it works (the short version)
 
-1. You collect floor photos and sort them into 3 folders by label.
+1. You collect floor photos and sort them into 2 folders by label.
 2. `train_anomaly.py` fine-tunes a small MobileNetV3 model on them.
 3. It saves the weights to `models/anomaly_mobilenet.pth`.
 4. Next time the edge unit starts, it auto-detects the weights and switches the anomaly
@@ -20,12 +20,11 @@ photos ──▶ train_anomaly.py ──▶ models/anomaly_mobilenet.pth ──�
 
 ## Step 1 — Collect images
 
-Create photos of the floor in three categories. Put them here (folder name = label):
+Create photos of the floor in two categories. Put them here (folder name = label):
 
 ```
 edge/data/anomaly/
 ├── liquid_spill/    water / juice / coffee puddles, on different floors & lighting
-├── fallen_object/   a bag, chair, bottle, book lying on the floor
 └── normal/          clean floor — AND people walking/standing (very important!)
 ```
 
@@ -59,7 +58,7 @@ edge/data/anomaly/
 
 Use this when walking the campus. Tools to help:
 - `python scripts/collect_frames.py` — webcam capture: press `1`/`2`/`3` to save & label a
-  frame into `fallen_object` / `liquid_spill` / `normal`. Shows live counts.
+  frame into `liquid_spill` / `normal`. Shows live counts.
 - Phone photos work too — just copy them into the matching folder afterwards.
 - `python scripts/check_dataset.py` — run anytime to see counts and whether you're ready.
 
@@ -67,8 +66,6 @@ What to capture (variety is what makes it work):
 
 - **liquid_spill** — water, juice, coffee puddles. Different floor types (tile, vinyl,
   carpet), different sizes, wet vs. drying, with and without reflections/glare.
-- **fallen_object** — a bag, bottle, book, chair on its side, trash on the floor. Various
-  positions and distances.
 - **normal** — clean floor in many rooms/corridors AND, importantly, **people standing and
   walking**. This is what stops the model from calling a moving person a "spill" (the exact
   bug that made us disable detection).

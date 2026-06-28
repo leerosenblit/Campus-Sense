@@ -1,6 +1,6 @@
 // Human-friendly labels for the codes the backend/engine use internally.
 // Keeping the mapping in one place means no technical strings (EMPTY_POWER_OFF,
-// fallen_object, …) ever leak into the UI.
+// liquid_spill, …) ever leak into the UI.
 
 export const BUILDING_LABEL = {
   ficus: "Ficus",
@@ -16,6 +16,7 @@ export const STATUS = {
   RECENTLY_EMPTY:  { label: "Just vacated",    tone: "amber" },
   EMPTY_POWER_OFF: { label: "Empty · saving",  tone: "blue" },
   ALERT_ACTIVE:    { label: "Needs attention", tone: "red" },
+  FORGOTTEN_ITEM:  { label: "Forgotten item",  tone: "violet" },
   unknown:         { label: "No data",         tone: "slate" },
 };
 
@@ -27,7 +28,7 @@ export const TICKET_TYPE = {
   ac:            "Air conditioning",
   lights:        "Lighting",
   spill:         "Liquid spill",
-  fallen_object: "Fallen object",
+  lost_item:     "Forgotten item",
   other:         "Other",
 };
 

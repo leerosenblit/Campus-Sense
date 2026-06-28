@@ -59,6 +59,15 @@ export const ClipboardIcon = (p) => (
   <Svg {...p}><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" /><path d="m9 14 2 2 4-4" /></Svg>
 );
 export const PowerIcon = (p) => (<Svg {...p}><path d="M12 2v10" /><path d="M18.4 6.6a9 9 0 1 1-12.8 0" /></Svg>);
+export const CalendarIcon = (p) => (
+  <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></Svg>
+);
+export const TrashIcon = (p) => (
+  <Svg {...p}><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></Svg>
+);
+export const PencilIcon = (p) => (
+  <Svg {...p}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></Svg>
+);
 
 // Ticket-type icons.
 export const ProjectorIcon = (p) => (
@@ -75,6 +84,9 @@ export const BoxIcon = (p) => (
   <Svg {...p}><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z" /><path d="m3 8 9 5 9-5M12 13v8" /></Svg>
 );
 export const DotsIcon = (p) => (<Svg {...p}><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></Svg>);
+export const BackpackIcon = (p) => (
+  <Svg {...p}><path d="M6 9a6 6 0 0 1 12 0v9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9Z" /><path d="M9 9a3 3 0 0 1 6 0" /><path d="M8 14h8" /><path d="M10 14v3h4v-3" /></Svg>
+);
 
 // Map ticket type -> icon component.
 export const TICKET_ICON = {
@@ -82,6 +94,6 @@ export const TICKET_ICON = {
   ac: SnowflakeIcon,
   lights: BulbIcon,
   spill: DropletIcon,
-  fallen_object: BoxIcon,
+  lost_item: BackpackIcon,
   other: DotsIcon,
 };

@@ -15,8 +15,8 @@ const COLUMNS = [
   { key: "resolved", label: "Done", accent: "text-emerald-500" },
 ];
 
-// urgent = auto-detected hazards + reported spills/falls.
-const URGENT = new Set(["spill", "fallen_object"]);
+// urgent = auto-detected hazards (spills).
+const URGENT = new Set(["spill"]);
 
 function roomLabel(rooms, id) {
   const r = rooms[id];

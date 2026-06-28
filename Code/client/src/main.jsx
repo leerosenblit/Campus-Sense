@@ -8,6 +8,7 @@ import Layout from "./Layout.jsx";
 import RequireAuth from "./RequireAuth.jsx";
 import MapPage from "./pages/MapPage.jsx";
 import TicketsPage from "./pages/TicketsPage.jsx";
+import SchedulePage from "./pages/SchedulePage.jsx";
 import AnalyticsPage from "./pages/AnalyticsPage.jsx";
 import CleanerPage from "./pages/CleanerPage.jsx";
 import ReportPage from "./pages/ReportPage.jsx";
@@ -28,6 +29,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <Route element={<Layout />}>
             <Route path="/map" element={<MapPage />} />
             <Route path="/tickets" element={<TicketsPage />} />
+            <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
           </Route>
         </Route>

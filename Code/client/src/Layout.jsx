@@ -1,11 +1,12 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { getRole, getEmail, logout } from "./api.js";
-import { MapIcon, TicketIcon, ChartIcon, LogOutIcon } from "./icons.jsx";
+import { MapIcon, TicketIcon, ChartIcon, CalendarIcon, LogOutIcon } from "./icons.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 
 const ALL_TABS = [
   { to: "/map", label: "Live Map", icon: MapIcon },
   { to: "/tickets", label: "Tickets", icon: TicketIcon },
+  { to: "/schedule", label: "Class Schedule", icon: CalendarIcon, roles: ["operations_manager"] },
   { to: "/analytics", label: "Analytics", icon: ChartIcon, roles: ["operations_manager"] },
 ];
 

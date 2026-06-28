@@ -18,6 +18,12 @@ PERSON_CONF_THRESHOLD = float(os.getenv("PERSON_CONF_THRESHOLD", "0.5"))
 OCCUPANCY_CONFIRM_FRAMES = int(os.getenv("OCCUPANCY_CONFIRM_FRAMES", "3"))
 ANOMALY_CONF_THRESHOLD = float(os.getenv("ANOMALY_CONF_THRESHOLD", "0.6"))
 
+# Forgotten-item detection (Use Case D). Only runs when the room is empty: a personal
+# item (bag/laptop/bottle/…) must be seen for this many consecutive frames before we
+# raise a "forgotten item" alert, filtering momentary false detections.
+FORGOTTEN_CONF_THRESHOLD = float(os.getenv("FORGOTTEN_CONF_THRESHOLD", "0.4"))
+FORGOTTEN_CONFIRM_FRAMES = int(os.getenv("FORGOTTEN_CONFIRM_FRAMES", "3"))
+
 # Heartbeat interval (seconds) so the server knows the unit is alive (book §4.5.1).
 HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "15"))
 

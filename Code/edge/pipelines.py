@@ -58,8 +58,35 @@ class PeopleCounter:
             pass
         return "cpu"
 
+    # COCO class ids for the personal items that get "forgotten" in a room (Use Case
+    # D). Reuses the same YOLO model as people counting — no extra model to train.
+    PERSONAL_ITEM_CLASSES = {
+        24: "backpack", 26: "handbag", 28: "suitcase",
+        39: "bottle", 63: "laptop", 67: "cell phone", 73: "book",
+    }
+
     def count(self, frame) -> int:
         return len(self.detect_boxes(frame))
+
+    def detect_items(self, frame, conf: float | None = None):
+        """Return [(item_name, confidence)] for personal items in the frame.
+
+        YOLO-only: the HOG fallback can't classify object types, so it returns [].
+        Used by the edge unit to spot a bag/laptop/bottle left in an empty room.
+        """
+        if self.backend != "yolo":
+            return []
+        results = self._model.predict(
+            frame, conf=conf if conf is not None else self.conf,
+            classes=list(self.PERSONAL_ITEM_CLASSES), device=self.device,
+            imgsz=self.imgsz, verbose=False)
+        items = []
+        for r in results:
+            for cls_id, c in zip(r.boxes.cls.tolist(), r.boxes.conf.tolist()):
+                name = self.PERSONAL_ITEM_CLASSES.get(int(cls_id))
+                if name:
+                    items.append((name, float(c)))
+        return items
 
     def detect_boxes(self, frame):
         """Return person bounding boxes as a list of (x, y, w, h).
@@ -90,7 +117,7 @@ class AnomalyDetector:
 
     Approach: background subtraction (current frame minus a baseline of the empty room)
     to find changed regions, then a MobileNetV3-small classifier on the crop:
-    classes = {liquid_spill, fallen_object, normal}.
+    classes = {liquid_spill, normal}.
 
     Fallback (no torch): report the largest changed-region ratio as a generic 'anomaly'
     candidate so the temporal filter and alerting path can be exercised.
@@ -98,7 +125,7 @@ class AnomalyDetector:
 
     # Order MUST match torchvision ImageFolder, which indexes classes alphabetically.
     # train_anomaly.py trains with this same order, so saved weights load correctly.
-    CLASSES = ["fallen_object", "liquid_spill", "normal"]
+    CLASSES = ["liquid_spill", "normal"]
 
     def __init__(self, weights: str = config.ANOMALY_WEIGHTS,
                  conf: float = config.ANOMALY_CONF_THRESHOLD):

@@ -1,0 +1,22 @@
+# Computer-vision model dependencies for REAL webcam detection (Project Book §5.1).
+# Not needed for --simulate. Install on top of the base deps:
+#     pip install -r requirements.txt -r requirements-cv.txt
+#
+# YOLOv8n person counting + MobileNetV3 anomaly classifier.
+#
+# NOTE: ultralytics must be >=8.3 to load weights under PyTorch >=2.6, which
+# defaults torch.load(weights_only=True). 8.2.0 silently fails to load and the
+# pipeline falls back to the slow OpenCV-HOG detector.
+#
+# torch is pinned per Python version because wheel availability differs:
+#   - Python <=3.11 has torch 2.2.2 wheels (the book's original pin).
+#   - Python 3.12 needs torch >=2.4 (2.2.2 has no cp312 wheels).
+ultralytics>=8.3.0        # provides YOLO; pulls in torch
+
+# Python <= 3.11
+torch==2.2.2 ; platform_system != "Darwin" and python_version < "3.12"
+torchvision==0.17.2 ; platform_system != "Darwin" and python_version < "3.12"
+
+# Python 3.12+
+torch>=2.4 ; platform_system != "Darwin" and python_version >= "3.12"
+torchvision>=0.19 ; platform_system != "Darwin" and python_version >= "3.12"

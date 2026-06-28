@@ -34,13 +34,13 @@ const ROOMS = [
   ["mapat-Oren", "mapat", 1, "Oren", 22, false],
 ];
 
-const TICKET_TYPES = ["projector", "ac", "lights", "spill", "fallen_object", "other"];
+const TICKET_TYPES = ["projector", "ac", "lights", "spill", "lost_item", "other"];
 const NOTES = {
   projector: ["No signal from HDMI", "Bulb flickering", "Remote not working"],
   ac: ["Room too warm", "AC dripping water", "Loud rattling noise"],
   lights: ["Back row lights out", "Lights won't turn on", "Flickering near board"],
   spill: ["Coffee spilled near entrance", "Water on the floor", "Sticky drink spill"],
-  fallen_object: ["Chair blocking aisle", "Box left in walkway", "Fallen poster"],
+  lost_item: ["Forgotten item: backpack", "Forgotten item: laptop", "Forgotten item: water bottle"],
   other: ["Door handle loose", "Window won't close", "Whiteboard marker dried out"],
 };
 const rand = (a) => a[Math.floor(Math.random() * a.length)];
@@ -107,8 +107,23 @@ async function main() {
     );
   }
 
-  // Reset history (idempotent)
-  await query("TRUNCATE events, tickets, schedules RESTART IDENTITY");
+  // Detect rooms currently fed by a LIVE edge unit, so re-seeding never stomps real
+  // data. A room counts as live if it produced any event (heartbeat/occupancy/…) in
+  // the last 2 minutes. Their status + recent events are preserved below.
+  const liveRes = await query(
+    "SELECT DISTINCT room_id FROM events WHERE ts > now() - interval '2 minutes'"
+  );
+  const liveRooms = new Set(liveRes.rows.map((r) => r.room_id));
+  if (liveRooms.size)
+    console.log(`Live edge units detected — preserving: ${[...liveRooms].join(", ")}`);
+
+  // Reset history (idempotent). schedules is handled separately below (it may need a
+  // shape migration), so it is not truncated here. We DELETE rather than TRUNCATE
+  // events so the last 2 minutes (a running edge unit's live stream) survive; the
+  // synthetic week and everything older is cleared and re-seeded. Tickets are demo
+  // data and fully reset.
+  await query("DELETE FROM events WHERE ts < now() - interval '2 minutes'");
+  await query("TRUNCATE tickets RESTART IDENTITY");
 
   // Drop any rooms that aren't part of the current campus (e.g. legacy oren-lab10,
   // ficus-hall2). Safe now that the child tables above are empty.
@@ -152,13 +167,14 @@ async function main() {
 
   // ---- tickets (mix of types / statuses / ages) ----
   // resolution speed (minutes) by type — hazards get cleared fast.
-  const RESOLVE_MIN = { spill: [8, 25], fallen_object: [10, 40], ac: [60, 240],
+  const RESOLVE_MIN = { spill: [8, 25], lost_item: [15, 90], ac: [60, 240],
     projector: [30, 180], lights: [45, 200], other: [60, 300] };
   const ticketRows = [];
   for (let i = 0; i < 24; i++) {
     const type = rand(TICKET_TYPES);
     const [roomId] = rand(ROOMS);
-    const source = (type === "spill" || type === "fallen_object") && Math.random() < 0.5 ? "anomaly" : "qr";
+    const source = type === "lost_item" ? "anomaly"
+      : (type === "spill" && Math.random() < 0.5 ? "anomaly" : "qr");
     const createdAgoMin = rint(20, 7 * 24 * 60); // up to 7 days ago
     const created = new Date(now.getTime() - createdAgoMin * 60000);
     // 45% resolved, 20% in progress, rest open
@@ -181,7 +197,7 @@ async function main() {
     ]);
   }
   // Guarantee a couple of fresh open cleaning tasks so the cleaner view isn't empty.
-  for (const t of ["spill", "fallen_object"]) {
+  for (const t of ["spill", "lost_item"]) {
     ticketRows.push([
       rand(ROOMS)[0], t, "anomaly", "open", rand(NOTES[t]),
       +(0.7 + Math.random() * 0.25).toFixed(2),
@@ -194,46 +210,131 @@ async function main() {
     ticketRows
   );
 
-  // ---- schedules: a class active now, one starting soon, plus this week ----
-  const sched = [];
-  const at = (offsetMin, durMin, roomId, course) => {
-    const s = new Date(now.getTime() + offsetMin * 60000);
-    const e = new Date(s.getTime() + durMin * 60000);
-    sched.push([roomId, course, s.toISOString(), e.toISOString()]);
-  };
-  at(-30, 90, "ficus-301", "SWE-301 Software Engineering"); // active now
-  at(10, 90, "kirya-H1", "MATH-101 Calculus");              // starts in 10 min
-  at(120, 90, "ficus-201", "DB-210 Databases");
-  at(-3 * 24 * 60, 90, "kirya-H2", "PHY-110 Physics");      // earlier this week
-  at(2 * 24 * 60, 120, "mapat-Tamar", "AI-410 Deep Learning");
-  await insertRows("schedules", ["room_id", "course_id", "start_ts", "end_ts"], sched);
+  // ---- schedules: a permanent weekly timetable (FR2) ----
+  // Each row is a recurring weekly class: same course, same room, same weekday and
+  // time every week. day_of_week: 0=Sunday..6=Saturday. The Israel academic week
+  // runs Sunday(0)-Thursday(4); Fri/Sat are off.
+  // Grid entry: [dow, startHour, startMin, durationMin, roomId, course]
+  const TIMETABLE = [
+    // Sunday
+    [0, 8, 30, 90, "ficus-101", "SWE-301 Software Engineering"],
+    [0, 10, 15, 90, "ficus-201", "DB-210 Databases"],
+    [0, 10, 0, 120, "kirya-H1", "MATH-101 Calculus I"],
+    [0, 13, 0, 90, "kirya-Z1", "ENG-150 Technical English"],
+    [0, 14, 30, 90, "mapat-Gefen", "UX-220 Human-Computer Interaction"],
+    // Monday
+    [1, 9, 0, 120, "kirya-H1", "PHY-110 Physics I"],
+    [1, 9, 0, 90, "ficus-102", "ALG-201 Algorithms"],
+    [1, 11, 0, 90, "ficus-301", "SWE-301 Software Engineering"],
+    [1, 13, 30, 90, "kirya-H2", "OS-310 Operating Systems"],
+    [1, 15, 0, 120, "mapat-Tamar", "AI-410 Deep Learning"],
+    // Tuesday
+    [2, 8, 30, 90, "ficus-201", "DB-210 Databases"],
+    [2, 10, 15, 90, "ficus-302", "NET-330 Computer Networks"],
+    [2, 11, 0, 120, "kirya-H1", "MATH-101 Calculus I"],
+    [2, 14, 0, 90, "kirya-Z2", "STAT-205 Probability"],
+    [2, 16, 0, 90, "mapat-Oren", "SEC-420 Cyber Security"],
+    // Wednesday
+    [3, 9, 0, 90, "ficus-101", "ALG-201 Algorithms"],
+    [3, 10, 30, 120, "kirya-H2", "OS-310 Operating Systems"],
+    [3, 11, 0, 90, "ficus-301", "SWE-340 Software Architecture"],
+    [3, 13, 0, 90, "kirya-Z1", "ENG-150 Technical English"],
+    [3, 14, 30, 120, "mapat-Tamar", "AI-410 Deep Learning"],
+    // Thursday
+    [4, 9, 0, 90, "ficus-102", "NET-330 Computer Networks"],
+    [4, 10, 30, 120, "kirya-H1", "PHY-110 Physics I"],
+    [4, 11, 0, 90, "ficus-201", "DB-260 Advanced Databases"],
+    [4, 13, 0, 90, "kirya-Z2", "STAT-205 Probability"],
+    [4, 14, 30, 90, "mapat-Gefen", "UX-220 Human-Computer Interaction"],
+  ];
+  const pad = (n) => String(n).padStart(2, "0");
+  const hhmmss = (mins) => `${pad(Math.floor(mins / 60) % 24)}:${pad(mins % 60)}:00`;
+  const sched = TIMETABLE.map(([dow, sh, sm, dur, roomId, course]) => {
+    const startMin = sh * 60 + sm;
+    return [roomId, course, dow, hhmmss(startMin), hhmmss(startMin + dur)];
+  });
+  // Migrate the table to the weekly-recurrence shape, then load the timetable. We
+  // drop/recreate (rather than truncate) so an existing DB created with the old
+  // start_ts/end_ts columns is converted; schema.sql carries the same DDL for fresh
+  // installs. No other table references schedules, so this is safe.
+  await query("DROP TABLE IF EXISTS schedules CASCADE");
+  await query(`
+    CREATE TABLE schedules (
+      id          SERIAL PRIMARY KEY,
+      room_id     TEXT NOT NULL REFERENCES rooms(id),
+      course_id   TEXT,
+      day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+      start_time  TIME NOT NULL,
+      end_time    TIME NOT NULL,
+      CHECK (end_time > start_time)
+    )`);
+  await query("CREATE INDEX idx_schedules_room_dow ON schedules (room_id, day_of_week)");
+  await insertRows("schedules", ["room_id", "course_id", "day_of_week", "start_time", "end_time"], sched);
 
   // ---- live snapshot so the map looks alive even with no edge unit running ----
-  const snapshot = [
-    ["ficus-301", "OCCUPIED", 22, true],
-    ["ficus-302", "RECENTLY_EMPTY", 0, true],
-    ["ficus-101", "EMPTY_POWER_OFF", 0, false],
-    ["ficus-102", "OCCUPIED", 18, true],
-    ["ficus-201", "OCCUPIED", 25, true],
-    ["kirya-H1", "OCCUPIED", 41, true],
-    ["kirya-H2", "EMPTY_POWER_OFF", 0, false],
-    ["kirya-Z1", "ALERT_ACTIVE", 3, true],
-    ["kirya-Z2", "EMPTY_POWER_OFF", 0, false],
-    ["mapat-Tamar", "OCCUPIED", 12, true],
-    ["mapat-Gefen", "RECENTLY_EMPTY", 0, true],
-    ["mapat-Oren", "EMPTY_POWER_OFF", 0, false],
-  ];
-  for (const [id, status, occ, on] of snapshot) {
+  // Computed against the weekly timetable for the CURRENT time, so the map is
+  // realistic the moment it loads: a room with a class on now is in use; a room
+  // whose class ended within the power-off window is cooling down; everything else
+  // is empty and powered off (e.g. an evening with no classes = a dark, saving
+  // campus). One room is forced into an alert (Use Case B) and one into a forgotten-
+  // item hold (Use Case D) so both flows + the cleaner view demo without hardware.
+  // Rooms with a live edge unit are skipped entirely — their real status stands.
+  const nowDow = now.getDay();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const EMPTY_MIN = Number(process.env.EMPTY_MINUTES_BEFORE_OFF || 10);
+  const capOf = Object.fromEntries(ROOMS.map((r) => [r[0], r[4]]));
+  const ALERT_ROOM = "kirya-Z1";     // alerting room (spill) for the demo + cleaner view
+  const FORGOTTEN_ROOM = "ficus-302"; // empty room holding a forgotten item (Use Case D)
+
+  // Per room: occupancy if a class is on now, else minutes since the last class ended today.
+  const activeNow = {};
+  const endedAgo = {};
+  for (const [dow, sh, sm, dur, roomId] of TIMETABLE) {
+    if (dow !== nowDow) continue;
+    const s = sh * 60 + sm, e = s + dur;
+    if (nowMin >= s && nowMin < e) {
+      activeNow[roomId] = rint(Math.round(capOf[roomId] * 0.6), capOf[roomId]);
+    } else if (nowMin >= e && nowMin - e <= EMPTY_MIN) {
+      endedAgo[roomId] = Math.min(endedAgo[roomId] ?? Infinity, nowMin - e);
+    }
+  }
+
+  for (const [id, , , , , wl] of ROOMS) {
+    if (liveRooms.has(id)) continue; // a live edge unit owns this room's status
+    let status, occ = 0, on = false;
+    if (id === ALERT_ROOM) {
+      status = "ALERT_ACTIVE"; occ = activeNow[id] || 0; on = true;
+    } else if (id === FORGOTTEN_ROOM) {
+      status = "FORGOTTEN_ITEM"; on = true;   // empty but held on until the item is collected
+    } else if (activeNow[id] != null) {
+      status = "OCCUPIED"; occ = activeNow[id]; on = true;
+    } else if (endedAgo[id] != null) {
+      status = "RECENTLY_EMPTY"; on = true;          // class just finished, cooling down
+    } else if (wl) {
+      status = "RECENTLY_EMPTY"; on = true;          // whitelisted hall: never auto-off
+    } else {
+      status = "EMPTY_POWER_OFF"; on = false;        // empty + saving
+    }
     await query(
       "UPDATE rooms SET status=$2, occupancy=$3, systems_on=$4, updated_at=now() WHERE id=$1",
       [id, status, occ, on]
     );
   }
-  // Make sure the alerting room has a matching open spill ticket.
-  await query(
-    `INSERT INTO tickets (room_id, type, source, status, note, confidence)
-     VALUES ('kirya-Z1','spill','anomaly','open','Detected liquid spill near front row', 0.88)`
-  );
+  // Make sure the alerting room has a matching open spill ticket, and the forgotten-
+  // item room a matching lost-and-found ticket (skip if a live edge unit owns the
+  // room — we didn't force its state in that case).
+  if (!liveRooms.has(ALERT_ROOM)) {
+    await query(
+      `INSERT INTO tickets (room_id, type, source, status, note, confidence)
+       VALUES ('${ALERT_ROOM}','spill','anomaly','open','Detected liquid spill near front row', 0.88)`
+    );
+  }
+  if (!liveRooms.has(FORGOTTEN_ROOM)) {
+    await query(
+      `INSERT INTO tickets (room_id, type, source, status, note, confidence)
+       VALUES ('${FORGOTTEN_ROOM}','lost_item','anomaly','open','Forgotten item: backpack', 0.79)`
+    );
+  }
 
   console.log(`Done. ${occRows.length} occupancy + ${relayRows.length} relay events, ` +
     `${ticketRows.length + 1} tickets, ${sched.length} schedules, ${ROOMS.length} rooms.`);

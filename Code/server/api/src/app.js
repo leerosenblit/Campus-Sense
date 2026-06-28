@@ -7,6 +7,7 @@ import { Server } from "socket.io";
 import authRoutes from "./routes/auth.js";
 import roomRoutes from "./routes/rooms.js";
 import ticketRoutes from "./routes/tickets.js";
+import scheduleRoutes from "./routes/schedules.js";
 import analyticsRoutes from "./routes/analytics.js";
 import internalRoutes from "./routes/internal.js";
 
@@ -28,6 +29,7 @@ export function createApp() {
   app.use("/auth", authRoutes);
   app.use("/rooms", roomRoutes);
   app.use("/tickets", ticketLimiter, ticketRoutes(io));
+  app.use("/schedules", scheduleRoutes());
   app.use("/analytics", analyticsRoutes);
   app.use("/internal", internalRoutes(io)); // engine -> server (loopback only in prod)
 

@@ -3,7 +3,7 @@ REM ============================================================
 REM  Campus-Sense one-time setup
 REM  Installs all dependencies, creates Python venvs, starts the
 REM  infrastructure containers, and seeds the demo database.
-REM  Run this ONCE (or again any time to reset). Then use start.bat.
+REM  Run this ONCE (or again any time to reset). Then use start.ps1.
 REM ============================================================
 setlocal
 cd /d "%~dp0"
@@ -77,7 +77,7 @@ popd
 
 echo.
 echo ============================================================
-echo  Setup complete. Now run:  start.bat
+echo  Setup complete. Now run:  start.ps1   (or .\start.ps1 -Simulate)
 echo ============================================================
 pause
 exit /b 0

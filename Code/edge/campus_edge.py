@@ -27,11 +27,12 @@ log = logging.getLogger("edge")
 
 class EdgeUnit:
     def __init__(self, building: str, room: str, simulate: bool = False,
-                 preview: bool = False):
+                 preview: bool = False, debug_spill: bool = False):
         self.building = building
         self.room = room
         self.simulate = simulate
         self.preview = preview           # draw a local window of what the camera sees
+        self.debug_spill = debug_spill   # save flagged spill regions to debug/anomaly/
         self.relay = SimulatedRelay()
         self.last_count = -1             # last count actually published
         self.last_boxes = []             # most recent person boxes, for --preview only
@@ -55,7 +56,7 @@ class EdgeUnit:
         if not simulate:
             from pipelines import PeopleCounter, AnomalyDetector
             self.counter = PeopleCounter()
-            self.anomaly = AnomalyDetector()
+            self.anomaly = AnomalyDetector(debug_dir="debug/anomaly" if debug_spill else None)
             dev = self.counter.device if self.counter.backend == "yolo" else "cpu"
             log.info("CV backends: people=%s (%s) anomaly=%s",
                      self.counter.backend, dev, self.anomaly.backend)
@@ -255,9 +256,11 @@ def main():
                     help="Run without a webcam / CV models (publishes synthetic data)")
     ap.add_argument("--preview", action="store_true",
                     help="Open a local window showing the live camera + detection boxes")
+    ap.add_argument("--debug-spill", action="store_true",
+                    help="Save each region flagged as a spill to debug/anomaly/ for inspection")
     args = ap.parse_args()
     EdgeUnit(args.building, args.room, simulate=args.simulate,
-             preview=args.preview).start()
+             preview=args.preview, debug_spill=args.debug_spill).start()
 
 
 if __name__ == "__main__":

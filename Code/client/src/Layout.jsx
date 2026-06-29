@@ -31,7 +31,16 @@ export default function Layout() {
     <div className="min-h-screen flex bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
       <aside className="w-64 bg-slate-900 text-slate-100 p-5 flex flex-col dark:bg-slate-900 dark:border-r dark:border-slate-800">
         <div className="flex items-center justify-between mb-8 border-b border-slate-700 pb-3">
-          <h1 className="text-xl font-bold tracking-tight">Campus-Sense</h1>
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Logo from client/public/logo.png; hidden until that file exists. */}
+            <img
+              src="/logo.png"
+              alt=""
+              className="h-7 w-7 rounded object-contain shrink-0"
+              onError={(e) => { e.currentTarget.style.display = "none"; }}
+            />
+            <h1 className="text-xl font-bold tracking-tight truncate">Campus-Sense</h1>
+          </div>
           <ThemeToggle className="text-slate-300" />
         </div>
 

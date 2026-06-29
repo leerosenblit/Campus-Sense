@@ -40,18 +40,19 @@ Legend:
 - ✅ Sprint 1 — occupancy → auto power-off (verified end-to-end)
 - ✅ Sprint 2 — tickets, QR codes, cleaner notifications, ticket dedup
 - ✅ Sprint 3 (part 1) — schedule integration (FR2), role-based access (FR7)
-- ✅ Sprint 3 (part 2) — API integration tests (7), engine unit tests (6), GitHub Actions CI
+- ✅ Sprint 3 (part 2) — API integration tests (9), engine unit tests (9), GitHub Actions CI
 - ✅ One-click dev launcher (`start.ps1` / `stop.ps1`)
-- ✅ Anomaly training scaffold + data-collection toolkit (`train_anomaly.py`, `collect_frames.py`, `check_dataset.py`)
+- ✅ Forgotten-item detection (Use Case D) + weekly class-schedule editor (manager)
+- ✅ Spill-detector training pipeline (`scripts/coco_to_yolo.py`, `edge/train_spill.py`)
 - ⬜ **Final packaging** — full `docker compose up` (API + engine + dashboard containerized), edge `.exe` (PyInstaller), demo script
-- ⬜ **Spill model trained** and detection switched on (`anomaly=mobilenet`)
+- ⬜ **Spill model trained** and detection switched on (`anomaly=yolo-spill`)
 
 ## 4. Remaining work before 8 July (ordered)
 
-1. ⬜ **Collect campus dataset** (this week) — `collect_frames.py` / phone photos →
-   `check_dataset.py` says READY. Target ~500/class; ~100/class minimum.
-2. ⬜ **Train the spill model** — `python train_anomaly.py`, confirm edge logs
-   `anomaly=mobilenet`, test with a safe water spill. *(Completes FR4, enables NFR4.)*
+1. ⬜ **Build the spill dataset** — label spills (e.g. Roboflow), export YOLO/COCO →
+   `scripts/coco_to_yolo.py` → `edge/data/spill_yolo`. Target ~500 images; ~100 minimum.
+2. ⬜ **Train the spill detector** — `python edge/train_spill.py`, confirm edge logs
+   `anomaly=yolo-spill`, test with a safe water spill. *(Completes FR4, enables NFR4.)*
 3. ⬜ **Measure NFR1 accuracy** — run person counting on a few test videos, record error.
 4. ⬜ **Time NFR5** — confirm QR report is ≤30s / ≤3 taps.
 5. ⬜ **NFR6 browser check** — open the QR form + dashboard on Chrome/Firefox/Safari/Samsung.

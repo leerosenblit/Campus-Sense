@@ -27,10 +27,22 @@ models/*.pth
 # Generated QR codes
 qr/
 
-# Training images (large; keep the READMEs)
+# Training images + annotations (large; keep the READMEs). Covers every image type
+# a dataset export might use so downloads never get committed by accident.
 edge/data/**/*.jpg
 edge/data/**/*.jpeg
 edge/data/**/*.png
+edge/data/**/*.webp
+edge/data/**/*.avif
+edge/data/**/*.bmp
+edge/data/**/*.coco.json
+
+# Generated YOLO spill dataset, debug captures, and ultralytics training runs
+edge/data/spill_yolo/
+edge/spill_yolo/
+edge/debug/
+edge/runs/
+runs/
 
 # OS
 .DS_Store

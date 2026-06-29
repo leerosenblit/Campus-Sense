@@ -33,6 +33,13 @@ export default function LoginPage() {
         <ThemeToggle className="text-slate-500 dark:text-slate-300" />
       </div>
       <form onSubmit={submit} className="card p-8 w-full max-w-sm">
+        {/* Logo from client/public/logo.png; hidden until that file exists. */}
+        <img
+          src="/logo.png"
+          alt=""
+          className="h-14 mx-auto mb-3 block object-contain"
+          onError={(e) => { e.currentTarget.style.display = "none"; }}
+        />
         <h1 className="text-2xl font-bold mb-1">Campus-Sense</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Operations sign-in</p>
         <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>

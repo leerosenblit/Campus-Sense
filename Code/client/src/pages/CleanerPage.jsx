@@ -212,7 +212,16 @@ export default function CleanerPage() {
     <div className="min-h-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100">
       {/* App bar */}
       <header className="sticky top-0 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-bold">Cleaning</h1>
+        <div className="flex items-center gap-2 min-w-0">
+          {/* Logo from client/public/logo.png; hidden until that file exists. */}
+          <img
+            src="/logo.png"
+            alt=""
+            className="h-6 w-6 rounded object-contain shrink-0"
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
+          />
+          <h1 className="text-lg font-bold">Cleaning</h1>
+        </div>
         <div className="flex items-center gap-1">
           <ThemeToggle className="text-slate-500 dark:text-slate-300" />
           <button onClick={onLogout} title="Log out" className="p-2 rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-700/60 text-slate-500 dark:text-slate-300">

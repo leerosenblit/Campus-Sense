@@ -253,38 +253,55 @@ async function main() {
     const startMin = sh * 60 + sm;
     return [roomId, course, dow, hhmmss(startMin), hhmmss(startMin + dur)];
   });
-  // Migrate the table to the weekly-recurrence shape, then load the timetable. We
-  // drop/recreate (rather than truncate) so an existing DB created with the old
-  // start_ts/end_ts columns is converted; schema.sql carries the same DDL for fresh
-  // installs. No other table references schedules, so this is safe.
-  await query("DROP TABLE IF EXISTS schedules CASCADE");
-  await query(`
-    CREATE TABLE schedules (
-      id          SERIAL PRIMARY KEY,
-      room_id     TEXT NOT NULL REFERENCES rooms(id),
-      course_id   TEXT,
-      day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
-      start_time  TIME NOT NULL,
-      end_time    TIME NOT NULL,
-      CHECK (end_time > start_time)
-    )`);
-  await query("CREATE INDEX idx_schedules_room_dow ON schedules (room_id, day_of_week)");
-  await insertRows("schedules", ["room_id", "course_id", "day_of_week", "start_time", "end_time"], sched);
+  // Ensure the schedules table exists in the weekly-recurrence shape, then seed the
+  // demo timetable ONLY if the table is empty — so classes you add in the dashboard
+  // survive re-seeding. We drop/recreate only when migrating from the old
+  // start_ts/end_ts shape, or when RESET_SCHEDULES=1 forces the demo timetable back.
+  const resetSchedules = process.env.RESET_SCHEDULES === "1";
+  const reg = await query("SELECT to_regclass('public.schedules') AS tbl");
+  let needsCreate = reg.rows[0].tbl === null;
+  if (!needsCreate) {
+    const cols = await query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'schedules'"
+    );
+    const oldShape = cols.rows.some((c) => c.column_name === "start_ts"); // pre-migration
+    if (oldShape || resetSchedules) {
+      await query("DROP TABLE IF EXISTS schedules CASCADE");
+      needsCreate = true;
+    }
+  }
+  if (needsCreate) {
+    await query(`
+      CREATE TABLE schedules (
+        id          SERIAL PRIMARY KEY,
+        room_id     TEXT NOT NULL REFERENCES rooms(id),
+        course_id   TEXT,
+        day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+        start_time  TIME NOT NULL,
+        end_time    TIME NOT NULL,
+        CHECK (end_time > start_time)
+      )`);
+    await query("CREATE INDEX idx_schedules_room_dow ON schedules (room_id, day_of_week)");
+  }
+  const have = await query("SELECT count(*)::int AS n FROM schedules");
+  if (have.rows[0].n === 0) {
+    await insertRows("schedules", ["room_id", "course_id", "day_of_week", "start_time", "end_time"], sched);
+  } else {
+    console.log(`schedules: kept ${have.rows[0].n} existing rows (RESET_SCHEDULES=1 to rebuild the demo timetable)`);
+  }
 
   // ---- live snapshot so the map looks alive even with no edge unit running ----
-  // Computed against the weekly timetable for the CURRENT time, so the map is
-  // realistic the moment it loads: a room with a class on now is in use; a room
-  // whose class ended within the power-off window is cooling down; everything else
-  // is empty and powered off (e.g. an evening with no classes = a dark, saving
-  // campus). One room is forced into an alert (Use Case B) and one into a forgotten-
-  // item hold (Use Case D) so both flows + the cleaner view demo without hardware.
-  // Rooms with a live edge unit are skipped entirely — their real status stands.
+  // Status + occupancy are driven PURELY by the class schedule for the current time:
+  // a room with a class on now is in use (with a realistic head-count); a room whose
+  // class just ended is cooling down; everything else is empty and powered off. So the
+  // map always agrees with the Class Schedule page. The edge unit's own room
+  // (ficus-301) and any room with a live edge feed are left untouched — the real
+  // sensor owns those, and the simulation never fights live data.
+  const EDGE_ROOM = "ficus-301";  // matches the edge args: --building ficus --room 301
   const nowDow = now.getDay();
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const EMPTY_MIN = Number(process.env.EMPTY_MINUTES_BEFORE_OFF || 10);
   const capOf = Object.fromEntries(ROOMS.map((r) => [r[0], r[4]]));
-  const ALERT_ROOM = "kirya-Z1";     // alerting room (spill) for the demo + cleaner view
-  const FORGOTTEN_ROOM = "ficus-302"; // empty room holding a forgotten item (Use Case D)
 
   // Per room: occupancy if a class is on now, else minutes since the last class ended today.
   const activeNow = {};
@@ -300,44 +317,26 @@ async function main() {
   }
 
   for (const [id, , , , , wl] of ROOMS) {
-    if (liveRooms.has(id)) continue; // a live edge unit owns this room's status
+    if (liveRooms.has(id) || id === EDGE_ROOM) continue; // live edge owns these
     let status, occ = 0, on = false;
-    if (id === ALERT_ROOM) {
-      status = "ALERT_ACTIVE"; occ = activeNow[id] || 0; on = true;
-    } else if (id === FORGOTTEN_ROOM) {
-      status = "FORGOTTEN_ITEM"; on = true;   // empty but held on until the item is collected
-    } else if (activeNow[id] != null) {
-      status = "OCCUPIED"; occ = activeNow[id]; on = true;
+    if (activeNow[id] != null) {
+      status = "OCCUPIED"; occ = activeNow[id]; on = true;     // class in session
     } else if (endedAgo[id] != null) {
-      status = "RECENTLY_EMPTY"; on = true;          // class just finished, cooling down
+      status = "RECENTLY_EMPTY"; on = true;                    // class just ended, cooling down
     } else if (wl) {
-      status = "RECENTLY_EMPTY"; on = true;          // whitelisted hall: never auto-off
+      status = "RECENTLY_EMPTY"; on = true;                    // whitelisted hall: never auto-off
     } else {
-      status = "EMPTY_POWER_OFF"; on = false;        // empty + saving
+      status = "EMPTY_POWER_OFF"; on = false;                  // no class -> empty + saving
     }
     await query(
       "UPDATE rooms SET status=$2, occupancy=$3, systems_on=$4, updated_at=now() WHERE id=$1",
       [id, status, occ, on]
     );
   }
-  // Make sure the alerting room has a matching open spill ticket, and the forgotten-
-  // item room a matching lost-and-found ticket (skip if a live edge unit owns the
-  // room — we didn't force its state in that case).
-  if (!liveRooms.has(ALERT_ROOM)) {
-    await query(
-      `INSERT INTO tickets (room_id, type, source, status, note, confidence)
-       VALUES ('${ALERT_ROOM}','spill','anomaly','open','Detected liquid spill near front row', 0.88)`
-    );
-  }
-  if (!liveRooms.has(FORGOTTEN_ROOM)) {
-    await query(
-      `INSERT INTO tickets (room_id, type, source, status, note, confidence)
-       VALUES ('${FORGOTTEN_ROOM}','lost_item','anomaly','open','Forgotten item: backpack', 0.79)`
-    );
-  }
 
+  const schedTotal = (await query("SELECT count(*)::int AS n FROM schedules")).rows[0].n;
   console.log(`Done. ${occRows.length} occupancy + ${relayRows.length} relay events, ` +
-    `${ticketRows.length + 1} tickets, ${sched.length} schedules, ${ROOMS.length} rooms.`);
+    `${ticketRows.length} tickets, ${schedTotal} schedules, ${ROOMS.length} rooms.`);
   console.log("Logins (password campus123): manager@afeka.ac.il, it@afeka.ac.il, cleaner@afeka.ac.il");
   await pool.end();
 }

@@ -1,12 +1,14 @@
 # Campus-Sense one-click launcher (development / demo).
 #
 #   Right-click -> "Run with PowerShell", or in a terminal:
-#       ./start.ps1            # normal mode (10-minute empty-room rule)
+#       ./start.ps1            # normal mode (10-minute empty-room rule), real webcam
 #       ./start.ps1 -DemoFast  # demo mode (rooms power off immediately when empty)
+#       ./start.ps1 -Simulate  # edge publishes synthetic occupancy (no webcam needed)
 #
-# It starts the database + broker, the API, the decision engine, and the dashboard,
-# each in its own window, then opens the browser. No manual terminal juggling.
-param([switch]$DemoFast)
+# It starts the database + broker, the API, the decision engine, the dashboard, and the
+# edge unit, each in its own window, then opens the browser. No manual terminal juggling.
+# (First time only: run setup.bat to install dependencies and seed demo data.)
+param([switch]$DemoFast, [switch]$Simulate)
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
@@ -43,15 +45,22 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command",
 Start-Process powershell -ArgumentList "-NoExit", "-Command",
     "cd '$root\client'; Write-Host 'DASHBOARD' -ForegroundColor Cyan; npm run dev"
 
+# 5) Edge unit (new window) — real webcam by default, synthetic data with -Simulate.
+$edgeArgs = "--building ficus --room 301"
+if ($Simulate) { $edgeArgs += " --simulate" }
+Start-Process powershell -ArgumentList "-NoExit", "-Command",
+    "cd '$root\edge'; Write-Host 'EDGE UNIT' -ForegroundColor Cyan; & .\.venv\Scripts\python.exe campus_edge.py $edgeArgs"
+
 Start-Sleep -Seconds 4
 Start-Process "http://localhost:5173"
 
 Write-Host ""
 Write-Host "All services launched in separate windows." -ForegroundColor Green
 Write-Host "Dashboard:  http://localhost:5173   (manager@afeka.ac.il / campus123)"
+Write-Host "Edge unit:  ficus/301  ($edgeArgs)"
 Write-Host ""
-Write-Host "To feed it data, in ANOTHER terminal run one of:"
-Write-Host "  python scripts\demo_occupancy.py ficus-302 4          (no camera)"
-Write-Host "  python edge\campus_edge.py --building ficus --room 301 (real webcam)"
+Write-Host "Tips:"
+Write-Host "  -Simulate                                  edge without a webcam (synthetic occupancy)"
+Write-Host "  python scripts\demo_occupancy.py ficus-302 4   feed another room (no camera)"
 Write-Host ""
-Write-Host "To stop everything later:  ./stop.ps1"
+Write-Host "To stop everything later:  ./stop.ps1  (then close the service windows)"

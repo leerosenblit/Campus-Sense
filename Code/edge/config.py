@@ -31,12 +31,14 @@ HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "15"))
 # so they work no matter which directory you launch from. Models live in Code/models/.
 _MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
 YOLO_WEIGHTS = os.getenv("YOLO_WEIGHTS", os.path.join(_MODELS_DIR, "yolov8n.pt"))
-ANOMALY_WEIGHTS = os.getenv("ANOMALY_WEIGHTS", os.path.join(_MODELS_DIR, "anomaly_mobilenet.pth"))
+# Spill detector (YOLOv8 fine-tuned on spills). Absent -> anomaly detection disabled.
+SPILL_WEIGHTS = os.getenv("SPILL_WEIGHTS", os.path.join(_MODELS_DIR, "spill_yolo.pt"))
 
 # Inference device: "auto" picks the Metal GPU (mps) on Apple Silicon, else CPU.
 # Override with YOLO_DEVICE=cpu|mps|cuda:0. imgsz trades accuracy for speed.
 YOLO_DEVICE = os.getenv("YOLO_DEVICE", "auto")
 YOLO_IMGSZ = int(os.getenv("YOLO_IMGSZ", "480"))
+SPILL_IMGSZ = int(os.getenv("SPILL_IMGSZ", "640"))  # higher res helps catch small spills
 
 
 def topic(building: str, room: str, leaf: str) -> str:

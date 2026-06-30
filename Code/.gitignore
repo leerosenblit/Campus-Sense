@@ -19,9 +19,7 @@ dist/
 build/
 *.log
 
-# Model weights (large; distribute separately)
-models/*.onnx
-models/*.pth
+
 
 # Generated QR codes
 qr/

@@ -5,8 +5,8 @@
 #  Run ./setup.sh FIRST (once) to install deps + seed data.
 #
 #  Usage:
-#    ./start.sh            - edge unit runs with a real webcam
-#    ./start.sh --simulate - edge unit publishes synthetic data (no webcam)
+#    ./start.sh            - edge unit runs with a real webcam + live preview window
+#    ./start.sh --simulate - edge unit publishes synthetic data (no webcam, no preview)
 # ============================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -15,6 +15,9 @@ cd "$ROOT"
 EDGE_ARGS="--room 301 --building ficus"
 if [ "${1:-}" = "--simulate" ]; then
     EDGE_ARGS="$EDGE_ARGS --simulate"
+else
+    # Real webcam: open the live preview window so you can see what the camera sees.
+    EDGE_ARGS="$EDGE_ARGS --preview"
 fi
 
 ensure_docker() {

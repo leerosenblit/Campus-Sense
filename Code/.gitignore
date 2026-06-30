@@ -20,7 +20,6 @@ build/
 *.log
 
 # Model weights (large; distribute separately)
-models/*.pt
 models/*.onnx
 models/*.pth
 

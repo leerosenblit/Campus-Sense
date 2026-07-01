@@ -33,26 +33,23 @@ export default function ticketRoutes(io) {
     thumbnail: Joi.string().optional(),
   });
 
-  // Cooldown for AUTO-detected tickets only (spills, etc.) so a flickering detector
-  // can't flood the board: at most one (room, type) anomaly ticket per N minutes.
-  // Student QR reports are never throttled here (a person reporting is intentional).
-  const COOLDOWN_MIN = Number(process.env.TICKET_COOLDOWN_MINUTES || 5);
-
   // POST /tickets — create a ticket. Used by the QR form and the anomaly handler.
   // No auth: the student QR form is intentionally unauthenticated (book §4.5.3).
   router.post("/", async (req, res) => {
     const { error, value } = createSchema.validate(req.body);
     if (error) return res.status(400).json({ error: error.message });
 
+    // Auto-detected tickets (spills, etc.) de-duplicate on the LIVE queue: while an
+    // open OR in-progress ticket of the same (room, type) exists, drop new ones — a
+    // hazard stays a single task until a human resolves it (not time-based). Student
+    // QR reports are never de-duplicated (a person reporting is always intentional).
     if (value.source === "anomaly") {
-      const recent = await query(
+      const live = await query(
         `SELECT 1 FROM tickets
-          WHERE room_id = $1 AND type = $2
-            AND created_at > now() - ($3 || ' minutes')::interval
-          LIMIT 1`,
-        [value.room_id, value.type, String(COOLDOWN_MIN)]
+          WHERE room_id = $1 AND type = $2 AND status <> 'resolved' LIMIT 1`,
+        [value.room_id, value.type]
       );
-      if (recent.rows.length) return res.status(200).json({ ok: true, deduped: true });
+      if (live.rows.length) return res.status(200).json({ ok: true, deduped: true });
     }
 
     const { rows } = await query(
@@ -64,6 +61,14 @@ export default function ticketRoutes(io) {
     const ticket = rows[0];
     io.emit("ticket:new", ticket); // live push to dashboards + cleaner view
     res.status(201).json(ticket);
+  });
+
+  // DELETE /tickets/resolved — permanently clear the "Done" column. Declared before
+  // the "/:id" routes so "resolved" isn't captured as an id.
+  router.delete("/resolved", requireAuth, async (_req, res) => {
+    const { rows } = await query("DELETE FROM tickets WHERE status = 'resolved' RETURNING id");
+    io.emit("ticket:update", { removed: rows.map((r) => r.id) }); // boards reload
+    res.json({ ok: true, deleted: rows.length });
   });
 
   const patchSchema = Joi.object({

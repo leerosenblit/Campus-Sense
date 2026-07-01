@@ -189,9 +189,16 @@ export default function CleanerPage() {
     };
     socket.on("ticket:new", onNew);
     socket.on("ticket:update", load);
+    // Silent refresh backstop + refresh on focus, so the task list stays current even
+    // if a live socket event is missed.
+    const iv = setInterval(load, 8000);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
     return () => {
       socket.off("ticket:new", onNew);
       socket.off("ticket:update", load);
+      clearInterval(iv);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 

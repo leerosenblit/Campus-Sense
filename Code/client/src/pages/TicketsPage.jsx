@@ -38,9 +38,16 @@ export default function TicketsPage() {
     const onChange = () => load();
     socket.on("ticket:new", onChange);
     socket.on("ticket:update", onChange);
+    // Silent refresh: a lightweight backstop so the board self-heals within seconds
+    // even if a live socket event is ever missed (dropped connection, etc.).
+    const iv = setInterval(load, 8000);
+    const onFocus = () => load(); // and instantly when the tab regains focus
+    window.addEventListener("focus", onFocus);
     return () => {
       socket.off("ticket:new", onChange);
       socket.off("ticket:update", onChange);
+      clearInterval(iv);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 
@@ -58,9 +65,25 @@ export default function TicketsPage() {
     }).catch(load);
   };
 
+  const resolvedCount = tickets.filter((t) => t.status === "resolved").length;
+  const clearDone = () => {
+    if (!resolvedCount) return;
+    if (!window.confirm(`Permanently delete ${resolvedCount} done ticket(s)?`)) return;
+    apiFetch("/tickets/resolved", { method: "DELETE" }).then(load).catch(load);
+  };
+
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-1">Maintenance Tickets</h2>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+        <h2 className="text-2xl font-bold">Maintenance Tickets</h2>
+        <button
+          onClick={clearDone}
+          disabled={!resolvedCount}
+          className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          Clear Done{resolvedCount ? ` (${resolvedCount})` : ""}
+        </button>
+      </div>
       <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
         Drag a card between columns to update its status.
       </p>

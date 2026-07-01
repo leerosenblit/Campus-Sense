@@ -23,8 +23,10 @@ USB camera and Sonoff relay from the book are substituted by the laptop webcam a
 Campus is modelled as three buildings — **Ficus**, **Kirya**, **Mapat Amal** — each
 with several rooms (see `db/seed.sql`).
 
-See `docs/SPRINT_PLAN.md` for the build plan and `docs/DEPLOYMENT.md` for a precise,
-copy-pasteable run/deploy runbook (incl. macOS/Linux and an agent checklist).
+See `docs/SPRINT_PLAN.md` for the build plan, `docs/DEPLOYMENT.md` for a precise,
+copy-pasteable run/deploy runbook (incl. macOS/Linux and an agent checklist), and
+**`docs/DETECTION_LOGIC.md`** for how detection → tasks behaves (read this to predict
+how the system reacts to spills, forgotten items, classes, and people coming/going).
 
 ## Repository layout
 

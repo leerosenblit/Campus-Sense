@@ -69,10 +69,11 @@ class PeopleCounter:
         return len(self.detect_boxes(frame))
 
     def detect_items(self, frame, conf: float | None = None):
-        """Return [(item_name, confidence)] for personal items in the frame.
+        """Return [(item_name, confidence, (x, y, w, h))] for personal items in frame.
 
         YOLO-only: the HOG fallback can't classify object types, so it returns [].
-        Used by the edge unit to spot a bag/laptop/bottle left in an empty room.
+        Used by the edge unit to spot a bag/laptop/bottle left in an empty room, and
+        to draw item boxes in the --preview window.
         """
         if self.backend != "yolo":
             return []
@@ -82,10 +83,11 @@ class PeopleCounter:
             imgsz=self.imgsz, verbose=False)
         items = []
         for r in results:
-            for cls_id, c in zip(r.boxes.cls.tolist(), r.boxes.conf.tolist()):
+            for cls_id, c, xyxy in zip(r.boxes.cls.tolist(), r.boxes.conf.tolist(), r.boxes.xyxy.tolist()):
                 name = self.PERSONAL_ITEM_CLASSES.get(int(cls_id))
                 if name:
-                    items.append((name, float(c)))
+                    x1, y1, x2, y2 = xyxy
+                    items.append((name, float(c), (int(x1), int(y1), int(x2 - x1), int(y2 - y1))))
         return items
 
     def detect_boxes(self, frame):
@@ -152,10 +154,12 @@ class AnomalyDetector:
                 self.enabled = False
 
     def detect(self, frame):
-        """Return ("liquid_spill", confidence) for the strongest spill box, or None.
+        """Return ("liquid_spill", confidence, (x, y, w, h)) for the strongest spill,
+        or None.
 
         None whenever the detector is disabled (no weights) OR no spill is found —
-        so unfamiliar objects never become a phantom spill.
+        so unfamiliar objects never become a phantom spill. The box is used to draw
+        the spill in the --preview window.
         """
         if not self.enabled:
             return None
@@ -170,7 +174,8 @@ class AnomalyDetector:
             return None
         if self._debug_dir:
             self._save_debug(frame, best_box, best_conf)
-        return "liquid_spill", best_conf
+        x1, y1, x2, y2 = best_box
+        return "liquid_spill", best_conf, (int(x1), int(y1), int(x2 - x1), int(y2 - y1))
 
     def _save_debug(self, frame, box, conf):
         import os

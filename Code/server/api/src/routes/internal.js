@@ -3,10 +3,6 @@ import Joi from "joi";
 import { query } from "../db.js";
 import { allAssignments } from "../cameraStore.js";
 
-// Cooldown so auto-detected events can't spam the board: at most one auto ticket of a
-// given (room, type) per this many minutes (book §4.5.3 — protect the ticket queue).
-const TICKET_COOLDOWN_MIN = Number(process.env.TICKET_COOLDOWN_MINUTES || 5);
-
 // Internal endpoint used by the decision engine to push events + room-state changes
 // into the database and broadcast them live to dashboards (book Table 4.1, §5.3.3).
 export default function internalRoutes(io) {
@@ -89,9 +85,9 @@ export default function internalRoutes(io) {
   });
 
   // Lost-and-found lifecycle (Use Case D). The edge reports a forgotten item as
-  // present / absent; we keep EXACTLY ONE open "lost_item" ticket per room while the
-  // item is present, and remove it the moment it's gone. Idempotent: repeated
-  // present=true messages never create duplicates.
+  // present / gone. We keep exactly ONE open "lost_item" task per room while the item
+  // is being seen; the edge reports "gone" only once it hasn't been seen for ~2 min,
+  // at which point we auto-close the task. Never creates duplicates.
   const lostSchema = Joi.object({
     room_id: Joi.string().required(),
     present: Joi.boolean().required(),
@@ -102,42 +98,53 @@ export default function internalRoutes(io) {
     const { error, value } = lostSchema.validate(req.body);
     if (error) return res.status(400).json({ error: error.message });
 
-    if (value.present) {
-      const note = value.item ? `Forgotten item: ${value.item}` : "Forgotten item left behind";
-      // Create only if there is no live lost_item ticket for this room AND none was
-      // created within the cooldown window. This both de-duplicates (one open ticket
-      // at a time) and rate-limits re-creation to once per TICKET_COOLDOWN_MIN.
+    // "Gone" (item unseen for ~2 min): DELETE the still-open task(s) for the room — a
+    // never-actioned auto-detected item just disappears, it does NOT clutter "Done".
+    // We only remove untouched 'open' ones; a task a cleaner moved to 'in_progress' is
+    // left for them to finish (and will land in Done when they complete it).
+    if (!value.present) {
       const { rows } = await query(
-        `INSERT INTO tickets (room_id, type, source, note, confidence)
-         SELECT $1, 'lost_item', 'anomaly', $2, $3
-         WHERE NOT EXISTS (
-           SELECT 1 FROM tickets
-            WHERE room_id = $1 AND type = 'lost_item'
-              AND (status <> 'resolved'
-                   OR created_at > now() - ($4 || ' minutes')::interval)
-         )
-         RETURNING *`,
-        [value.room_id, note, value.conf ?? null, String(TICKET_COOLDOWN_MIN)]
+        `DELETE FROM tickets
+          WHERE room_id = $1 AND type = 'lost_item' AND status = 'open'
+          RETURNING id`,
+        [value.room_id]
       );
-      if (rows[0]) {
-        io.emit("ticket:new", rows[0]); // live push to dashboards + cleaner view
-        return res.status(201).json(rows[0]);
-      }
-      return res.json({ ok: true, deduped: true }); // already open / within cooldown
+      if (rows.length) io.emit("ticket:update", { removed: rows.map((r) => r.id), room_id: value.room_id });
+      return res.json({ ok: true, deleted: rows.length });
     }
 
-    // Item gone: close the open lost_item ticket(s) for this room so they leave the
-    // to-do list. We RESOLVE rather than delete — it leaves the cleaner's open list,
-    // keeps an audit trail, and anchors the cooldown above. We only touch ones nobody
-    // has started; a ticket a cleaner moved to 'in_progress' is left for them.
-    const { rows } = await query(
-      `UPDATE tickets SET status = 'resolved', resolved_at = now()
-        WHERE room_id = $1 AND type = 'lost_item' AND status = 'open'
-        RETURNING *`,
-      [value.room_id]
+    // Don't raise a forgotten-item task while a class is scheduled in this room right
+    // now — an item on the floor during a lesson belongs to someone present.
+    const active = await query(
+      `WITH t AS (SELECT (now() AT TIME ZONE $2) AS local_ts)
+       SELECT EXISTS (
+         SELECT 1 FROM schedules s, t
+          WHERE s.room_id = $1
+            AND s.day_of_week = EXTRACT(DOW FROM t.local_ts)
+            AND t.local_ts::time BETWEEN s.start_time AND s.end_time
+       ) AS class_active`,
+      [value.room_id, CAMPUS_TZ]
     );
-    rows.forEach((t) => io.emit("ticket:update", t)); // UIs reload -> drops from to-do
-    return res.json({ ok: true, resolved: rows.length });
+    if (active.rows[0].class_active) return res.json({ ok: true, skipped: "class-active" });
+
+    // De-duplicate on the LIVE queue: while an open OR in-progress lost_item task
+    // exists for this room, a re-detected item never creates a second one.
+    const note = value.item ? `Forgotten item: ${value.item}` : "Forgotten item left behind";
+    const { rows } = await query(
+      `INSERT INTO tickets (room_id, type, source, note, confidence)
+       SELECT $1, 'lost_item', 'anomaly', $2, $3
+       WHERE NOT EXISTS (
+         SELECT 1 FROM tickets
+          WHERE room_id = $1 AND type = 'lost_item' AND status <> 'resolved'
+       )
+       RETURNING *`,
+      [value.room_id, note, value.conf ?? null]
+    );
+    if (rows[0]) {
+      io.emit("ticket:new", rows[0]); // live push to dashboards + cleaner view
+      return res.status(201).json(rows[0]);
+    }
+    return res.json({ ok: true, deduped: true }); // a live task already exists
   });
 
   return router;

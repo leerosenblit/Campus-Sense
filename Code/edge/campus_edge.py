@@ -36,15 +36,23 @@ class EdgeUnit:
         self.relay = SimulatedRelay()
         self.last_count = -1             # last count actually published
         self.last_boxes = []             # most recent person boxes, for --preview only
+        self.last_item_boxes = []        # [(name, (x,y,w,h))] personal items, for --preview
+        self.last_spill_box = None       # (x,y,w,h) strongest spill, for --preview
         self._pending_count = -1         # candidate count awaiting confirmation
         self._pending_streak = 0         # consecutive frames the candidate has held
-        self.anomaly_streak = 0          # consecutive-frame filter (book §5.2.2)
-        self.last_anomaly_cls = None
+        # Anomaly (spill) detection — same wall-clock hysteresis as forgotten items,
+        # so a flickering detector raises ONE alert per episode (not one per frame).
+        self._anomaly_cls = None
+        self._anomaly_active = False         # have we announced this spill episode?
+        self._anomaly_first_seen = None      # appear timer
+        self._anomaly_last_seen = None       # clear timer
         # Forgotten-item detection (Use Case D), only active while the room is empty.
-        self._forgotten_streak = 0          # consecutive frames the item has been SEEN
-        self._forgotten_absent_streak = 0   # consecutive frames it has been ABSENT
-        self._forgotten_item = None
-        self._forgotten_published = False   # is a "present" currently announced?
+        # Wall-clock hysteresis (robust to frame rate & flaky detections):
+        self._forgotten_item = None          # item type currently tracked
+        self._forgotten_present = False      # have we announced present=True?
+        self._forgotten_first_seen = None    # when this item was first seen (appear timer)
+        self._forgotten_last_seen = None     # when it was most recently seen (clear timer)
+        self._last_person_ts = time.time()   # last time a person was seen (empty-room settle timer)
 
         # MQTT
         self.client = mqtt.Client(client_id=f"edge-{building}-{room}")
@@ -99,6 +107,8 @@ class EdgeUnit:
     def _process_frame(self, frame):
         self.last_boxes = self.counter.detect_boxes(frame)
         count = len(self.last_boxes)
+        if count > 0:
+            self._last_person_ts = time.time()  # for the "person seen recently" gate
 
         # Debounce: a count must hold for OCCUPANCY_CONFIRM_FRAMES consecutive
         # frames before we publish it, so a one-frame detection dropout doesn't
@@ -115,80 +125,120 @@ class EdgeUnit:
             log.info("occupancy=%d", count)
 
         self._detect_forgotten_item(frame)
+        self._detect_anomaly(frame)
 
+    def _detect_anomaly(self, frame):
+        """Spill detection with wall-clock hysteresis (mirrors _detect_forgotten_item).
+
+        Publish ONE anomaly when a spill has been visible for ANOMALY_APPEAR_SECONDS,
+        and don't publish again until it's been UNSEEN for ANOMALY_CLEAR_SECONDS. This
+        stops a flaky detector from spamming dozens of identical alerts per second.
+        Confidence gating (ignore < ANOMALY_CONF_THRESHOLD) happens inside detect().
+        """
+        now = time.time()
         result = self.anomaly.detect(frame)
+        self.last_spill_box = result[2] if result is not None else None  # for --preview
+
         if result is not None:
-            cls, conf = result
-            # Only alert after the SAME anomaly in two consecutive frames (book §5.2.2).
-            if cls == self.last_anomaly_cls:
-                self.anomaly_streak += 1
-            else:
-                self.anomaly_streak = 1
-                self.last_anomaly_cls = cls
-            if self.anomaly_streak == 2:
+            cls, conf, _box = result
+            if cls != self._anomaly_cls:            # different anomaly -> restart appear timer
+                self._anomaly_cls = cls
+                self._anomaly_first_seen = now
+            self._anomaly_last_seen = now
+            if (not self._anomaly_active
+                    and now - self._anomaly_first_seen >= config.ANOMALY_APPEAR_SECONDS):
                 self._publish("anomaly", {"class": cls, "conf": round(conf, 3)})
+                self._anomaly_active = True
                 log.info("ANOMALY %s (%.2f)", cls, conf)
-        else:
-            self.anomaly_streak = 0
-            self.last_anomaly_cls = None
+            return
+
+        # Nothing detected this frame.
+        if self._anomaly_last_seen is None:
+            return
+        if now - self._anomaly_last_seen < config.ANOMALY_CLEAR_SECONDS:
+            return  # brief gap — treat as still present, don't reset
+        if self._anomaly_active:
+            log.info("anomaly cleared (unseen %.0fs)", now - self._anomaly_last_seen)
+        self._anomaly_cls = None                    # reset so a genuinely new spill can alert
+        self._anomaly_active = False
+        self._anomaly_first_seen = None
+        self._anomaly_last_seen = None
 
     def _detect_forgotten_item(self, frame):
         """Use Case D: a personal item left behind in an EMPTY room.
 
-        Only runs when the confirmed count is 0. BOTH appearance and disappearance are
-        debounced over FORGOTTEN_CONFIRM_FRAMES consecutive frames, so a single flaky
-        detection can't add/remove the ticket. We publish present=True exactly once
-        when an item appears and present=False once when it's gone; the server keeps a
-        single ticket in between. Privacy (NFR3): we publish the item TYPE only.
+        Wall-clock hysteresis, so it's stable regardless of frame rate or a flaky
+        detector: announce an item only after it has been visible for
+        FORGOTTEN_APPEAR_SECONDS, and announce it gone only after it has been UNSEEN
+        for FORGOTTEN_CLEAR_SECONDS. Brief detection dips inside those windows are
+        ignored (a still-present bag is never cleared; a one-frame blip never alerts).
+        While the room is occupied we can't see the floor, so we FREEZE the timers —
+        a person passing through never clears a still-present item. Privacy (NFR3):
+        we publish the item TYPE only.
         """
-        if self.last_count != 0:
-            # Room occupied: "forgotten in an empty room" doesn't apply right now.
-            # Pause detection but KEEP the published state — so we neither re-alert nor
-            # lose track when the room empties again. (The server releases the energy
-            # hold on occupancy itself.)
-            self._forgotten_absent_streak = 0
-            return
+        now = time.time()
 
+        # Runs EVERY frame (not gated on occupancy): we always track whether the item
+        # is still visible so the clear timer is independent of people being present.
         items = self.counter.detect_items(frame, conf=config.FORGOTTEN_CONF_THRESHOLD)
+        self.last_item_boxes = [(n, box) for (n, _c, box) in items]  # for --preview
         top = max(items, key=lambda it: it[1]) if items else None
 
         if top is not None:
-            name, conf = top
-            self._forgotten_absent_streak = 0
-            if name == self._forgotten_item:
-                self._forgotten_streak += 1
-            else:
+            name, conf, _box = top
+            if name != self._forgotten_item:      # a different item -> restart the appear timer
                 self._forgotten_item = name
-                self._forgotten_streak = 1
-            if (self._forgotten_streak >= config.FORGOTTEN_CONFIRM_FRAMES
-                    and not self._forgotten_published):
+                self._forgotten_first_seen = now
+            self._forgotten_last_seen = now
+            # CREATE only once the item has been visible for APPEAR seconds AND the room
+            # has been empty (no person spotted) for FORGOTTEN_EMPTY_SECONDS — a settle
+            # timer, so a new item is never raised while people are around.
+            room_empty_long_enough = now - self._last_person_ts >= config.FORGOTTEN_EMPTY_SECONDS
+            if (not self._forgotten_present
+                    and now - self._forgotten_first_seen >= config.FORGOTTEN_APPEAR_SECONDS
+                    and room_empty_long_enough):
                 self._publish("forgotten", {"item": name, "conf": round(conf, 3), "present": True})
-                self._forgotten_published = True
+                self._forgotten_present = True
                 log.info("FORGOTTEN ITEM %s (%.2f)", name, conf)
-        else:
-            self._forgotten_streak = 0
-            self._forgotten_absent_streak += 1
-            # Only declare it gone after it's been absent for the full debounce window,
-            # so one missed frame doesn't yank (then re-create) the ticket.
-            if (self._forgotten_published
-                    and self._forgotten_absent_streak >= config.FORGOTTEN_CONFIRM_FRAMES):
-                self._publish("forgotten", {"present": False})
-                self._forgotten_published = False
-                self._forgotten_item = None
-                log.info("forgotten item cleared")
+            return
+
+        # Item not seen this frame. CLEAR after FORGOTTEN_CLEAR_SECONDS unseen — checked
+        # regardless of occupancy (does not depend on the room being empty).
+        if self._forgotten_last_seen is None:
+            return  # nothing being tracked
+        if now - self._forgotten_last_seen < config.FORGOTTEN_CLEAR_SECONDS:
+            return  # still inside the grace window -> treat as still present
+        if self._forgotten_present:
+            self._publish("forgotten", {"present": False})
+            log.info("forgotten item cleared (unseen %.0fs)", now - self._forgotten_last_seen)
+        self._forgotten_item = None          # reset the episode
+        self._forgotten_present = False
+        self._forgotten_first_seen = None
+        self._forgotten_last_seen = None
 
     WINDOW = "Campus-Sense camera (press q to close)"
 
-    def _draw_preview(self, cv2, frame):
-        """Render what the camera sees: person boxes + live count overlay.
+    # Preview box colours (OpenCV uses BGR). Distinct per detection type.
+    _C_PERSON = (0, 255, 0)     # green
+    _C_ITEM = (0, 165, 255)     # amber/orange — forgotten-item candidates
+    _C_SPILL = (0, 0, 255)      # red — spills
 
-        Local debug view only — these pixels never leave the machine (NFR3).
+    def _draw_preview(self, cv2, frame):
+        """Render what the camera sees: colour-coded boxes for people, personal items
+        and spills, plus a live overlay. Local debug view only (NFR3).
         """
-        for (x, y, w, h) in self.last_boxes:
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        for (x, y, w, h) in self.last_boxes:                       # people -> green
+            cv2.rectangle(frame, (x, y), (x + w, y + h), self._C_PERSON, 2)
+        for name, (x, y, w, h) in self.last_item_boxes:            # items -> amber
+            cv2.rectangle(frame, (x, y), (x + w, y + h), self._C_ITEM, 2)
+            cv2.putText(frame, name, (x, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self._C_ITEM, 2)
+        if self.last_spill_box is not None:                        # spill -> red
+            x, y, w, h = self.last_spill_box
+            cv2.rectangle(frame, (x, y), (x + w, y + h), self._C_SPILL, 2)
+            cv2.putText(frame, "spill", (x, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, self._C_SPILL, 2)
         label = f"{self.building}/{self.room}   people={len(self.last_boxes)}   [{self.counter.backend}]"
-        cv2.putText(frame, label, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(frame, "preview only - not published. press q to close.", (10, 54),
+        cv2.putText(frame, label, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, self._C_PERSON, 2)
+        cv2.putText(frame, "green=people  amber=item  red=spill   |  press q to close", (10, 54),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
         cv2.imshow(self.WINDOW, frame)
 

@@ -16,13 +16,28 @@ PERSON_CONF_THRESHOLD = float(os.getenv("PERSON_CONF_THRESHOLD", "0.5"))
 # frames. Filters single-frame YOLO dropouts that otherwise flap the count (and
 # thus the dashboard) between e.g. 0 and 1.
 OCCUPANCY_CONFIRM_FRAMES = int(os.getenv("OCCUPANCY_CONFIRM_FRAMES", "3"))
-ANOMALY_CONF_THRESHOLD = float(os.getenv("ANOMALY_CONF_THRESHOLD", "0.6"))
+# Spill detector confidence gate: ignore any spill detection below this. 0.80 keeps
+# only high-confidence spills (fewer false positives on wet-looking floors/shadows).
+ANOMALY_CONF_THRESHOLD = float(os.getenv("ANOMALY_CONF_THRESHOLD", "0.7"))
+# Spill alert hysteresis (mirrors the forgotten-item timers): raise one alert after a
+# spill has been visible this long, and re-arm only after it's been gone this long.
+ANOMALY_APPEAR_SECONDS = float(os.getenv("ANOMALY_APPEAR_SECONDS", "1.5"))
+ANOMALY_CLEAR_SECONDS = float(os.getenv("ANOMALY_CLEAR_SECONDS", "15.0"))
 
-# Forgotten-item detection (Use Case D). Only runs when the room is empty: a personal
-# item (bag/laptop/bottle/…) must be seen for this many consecutive frames before we
-# raise a "forgotten item" alert, filtering momentary false detections.
+# Forgotten-item detection (Use Case D). Only runs when the room is empty. Uses
+# wall-clock hysteresis so it's stable regardless of frame rate or a flaky detector:
+#   - raise the alert after the item has been visible for APPEAR_SECONDS
+#   - clear it only after the item has been UNSEEN for CLEAR_SECONDS
+# (brief detection dips inside these windows are ignored, so a still-present bag is
+# never cleared, and a one-frame false blip never alerts).
 FORGOTTEN_CONF_THRESHOLD = float(os.getenv("FORGOTTEN_CONF_THRESHOLD", "0.4"))
-FORGOTTEN_CONFIRM_FRAMES = int(os.getenv("FORGOTTEN_CONFIRM_FRAMES", "3"))
+FORGOTTEN_APPEAR_SECONDS = float(os.getenv("FORGOTTEN_APPEAR_SECONDS", "2.0"))
+# Report the item gone once it hasn't been seen for this long — checked EVERY frame,
+# regardless of occupancy (the clear does not depend on the room being empty).
+FORGOTTEN_CLEAR_SECONDS = float(os.getenv("FORGOTTEN_CLEAR_SECONDS", "30.0"))
+# Settle timer: only report a forgotten item once the room has been empty (NOT a
+# single person spotted) for this long. Avoids reporting while people are still around.
+FORGOTTEN_EMPTY_SECONDS = float(os.getenv("FORGOTTEN_EMPTY_SECONDS", "10.0"))
 
 # Heartbeat interval (seconds) so the server knows the unit is alive (book §4.5.1).
 HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "15"))

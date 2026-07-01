@@ -33,11 +33,28 @@ export default function ticketRoutes(io) {
     thumbnail: Joi.string().optional(),
   });
 
+  // Cooldown for AUTO-detected tickets only (spills, etc.) so a flickering detector
+  // can't flood the board: at most one (room, type) anomaly ticket per N minutes.
+  // Student QR reports are never throttled here (a person reporting is intentional).
+  const COOLDOWN_MIN = Number(process.env.TICKET_COOLDOWN_MINUTES || 5);
+
   // POST /tickets — create a ticket. Used by the QR form and the anomaly handler.
   // No auth: the student QR form is intentionally unauthenticated (book §4.5.3).
   router.post("/", async (req, res) => {
     const { error, value } = createSchema.validate(req.body);
     if (error) return res.status(400).json({ error: error.message });
+
+    if (value.source === "anomaly") {
+      const recent = await query(
+        `SELECT 1 FROM tickets
+          WHERE room_id = $1 AND type = $2
+            AND created_at > now() - ($3 || ' minutes')::interval
+          LIMIT 1`,
+        [value.room_id, value.type, String(COOLDOWN_MIN)]
+      );
+      if (recent.rows.length) return res.status(200).json({ ok: true, deduped: true });
+    }
+
     const { rows } = await query(
       `INSERT INTO tickets (room_id, type, source, note, confidence, thumbnail)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,

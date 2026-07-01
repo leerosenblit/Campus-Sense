@@ -34,7 +34,45 @@ const ROOMS = [
   ["mapat-Oren", "mapat", 1, "Oren", 22, false],
 ];
 
+// Weekly class timetable — the single source of truth for both the schedules table
+// and the realistic, class-aligned occupancy generated below.
+// Grid entry: [dow, startHour, startMin, durationMin, roomId, course]. dow 0=Sunday.
+const TIMETABLE = [
+  // Sunday
+  [0, 8, 30, 90, "ficus-101", "SWE-301 Software Engineering"],
+  [0, 10, 15, 90, "ficus-201", "DB-210 Databases"],
+  [0, 10, 0, 120, "kirya-H1", "MATH-101 Calculus I"],
+  [0, 13, 0, 90, "kirya-Z1", "ENG-150 Technical English"],
+  [0, 14, 30, 90, "mapat-Gefen", "UX-220 Human-Computer Interaction"],
+  // Monday
+  [1, 9, 0, 120, "kirya-H1", "PHY-110 Physics I"],
+  [1, 9, 0, 90, "ficus-102", "ALG-201 Algorithms"],
+  [1, 11, 0, 90, "ficus-301", "SWE-301 Software Engineering"],
+  [1, 13, 30, 90, "kirya-H2", "OS-310 Operating Systems"],
+  [1, 15, 0, 120, "mapat-Tamar", "AI-410 Deep Learning"],
+  // Tuesday
+  [2, 8, 30, 90, "ficus-201", "DB-210 Databases"],
+  [2, 10, 15, 90, "ficus-302", "NET-330 Computer Networks"],
+  [2, 11, 0, 120, "kirya-H1", "MATH-101 Calculus I"],
+  [2, 14, 0, 90, "kirya-Z2", "STAT-205 Probability"],
+  [2, 16, 0, 90, "mapat-Oren", "SEC-420 Cyber Security"],
+  // Wednesday
+  [3, 9, 0, 90, "ficus-101", "ALG-201 Algorithms"],
+  [3, 10, 30, 120, "kirya-H2", "OS-310 Operating Systems"],
+  [3, 11, 0, 90, "ficus-301", "SWE-340 Software Architecture"],
+  [3, 13, 0, 90, "kirya-Z1", "ENG-150 Technical English"],
+  [3, 14, 30, 120, "mapat-Tamar", "AI-410 Deep Learning"],
+  // Thursday
+  [4, 9, 0, 90, "ficus-102", "NET-330 Computer Networks"],
+  [4, 10, 30, 120, "kirya-H1", "PHY-110 Physics I"],
+  [4, 11, 0, 90, "ficus-201", "DB-260 Advanced Databases"],
+  [4, 13, 0, 90, "kirya-Z2", "STAT-205 Probability"],
+  [4, 14, 30, 90, "mapat-Gefen", "UX-220 Human-Computer Interaction"],
+];
+
 const TICKET_TYPES = ["projector", "ac", "lights", "spill", "lost_item", "other"];
+// Relative likelihood of each ticket category (equipment issues dominate in practice).
+const TYPE_WEIGHTS = [["projector", 3], ["ac", 3], ["lights", 2], ["spill", 2], ["lost_item", 2], ["other", 1]];
 const NOTES = {
   projector: ["No signal from HDMI", "Bulb flickering", "Remote not working"],
   ac: ["Room too warm", "AC dripping water", "Loud rattling noise"],
@@ -46,14 +84,36 @@ const NOTES = {
 const rand = (a) => a[Math.floor(Math.random() * a.length)];
 const rint = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 
-// Average occupancy fraction for a given hour of a weekday.
-function occFraction(hour, dow) {
-  if (dow === 5 || dow === 6) return hour >= 9 && hour < 14 ? 0.12 : 0; // Fri/Sat: quiet
-  if (hour < 7 || hour >= 21) return 0;
-  if (hour >= 9 && hour < 12) return 0.85;
-  if (hour >= 14 && hour < 17) return 0.8;
-  if (hour === 12 || hour === 13) return 0.35; // lunch dip
-  return 0.3;
+// Headcount if a class is scheduled in this room at this minute-of-day, else null.
+function classHeadcount(roomId, dow, minOfDay, cap) {
+  for (const [d, sh, sm, dur, rid] of TIMETABLE) {
+    if (rid !== roomId || d !== dow) continue;
+    const s = sh * 60 + sm, e = s + dur;
+    if (minOfDay >= s && minOfDay < e) {
+      const intoClass = (minOfDay - s) / dur; // fills up then thins out near the end
+      const frac = intoClass < 0.15 ? 0.5 : intoClass > 0.85 ? 0.55 : 0.75 + Math.random() * 0.2;
+      return Math.max(1, Math.round(cap * frac));
+    }
+  }
+  return null;
+}
+
+// Realistic occupancy: full during scheduled classes, light ambient traffic otherwise.
+function occupancyAt(roomId, dow, minOfDay, cap) {
+  const head = classHeadcount(roomId, dow, minOfDay, cap);
+  if (head != null) return head;
+  if (dow === 5 || dow === 6) return Math.random() < 0.08 ? 1 : 0;       // Fri/Sat: nearly empty
+  if (minOfDay < 8 * 60 || minOfDay >= 18 * 60) return 0;                 // before/after the day
+  const r = Math.random();                                               // a few people passing through
+  return r < 0.55 ? 0 : r < 0.85 ? 1 : r < 0.96 ? 2 : 3;
+}
+
+// Pick a ticket type by weighted likelihood (see TYPE_WEIGHTS).
+function weightedType() {
+  const total = TYPE_WEIGHTS.reduce((s, [, w]) => s + w, 0);
+  let r = Math.random() * total;
+  for (const [t, w] of TYPE_WEIGHTS) if ((r -= w) < 0) return t;
+  return "other";
 }
 
 // Chunked multi-row insert to keep it fast.
@@ -136,9 +196,7 @@ async function main() {
   const pushEvt = (arr, id, type, val, ts) =>
     arr.push([id, type, JSON.stringify(val), ts.toISOString()]);
   ROOMS.forEach(([id, , , , cap, wl], ri) => {
-    // Per-room character so analytics isn't uniform: popularity scales occupancy,
-    // and each room follows its own daily power schedule -> different energy saved.
-    const popularity = 0.65 + (ri % 5) * 0.12;
+    // Each room follows its own daily power schedule -> different energy saved.
     const onHour = 7 + (ri % 3);   // systems come on 07:00–09:00
     const offHour = 17 + (ri % 5); // and go off 17:00–21:00
     for (let d = 6; d >= 0; d--) {
@@ -146,12 +204,12 @@ async function main() {
       day.setDate(now.getDate() - d);
       const dow = day.getDay();
       const weekend = dow === 5 || dow === 6;
-      // occupancy curve (drives the by-hour chart)
-      for (let h = 7; h <= 21; h++) {
-        const ts = new Date(day); ts.setHours(h, 0, 0, 0);
+      // occupancy, sampled every half hour and aligned to the class timetable so each
+      // room is busy at ITS class times (drives a realistic, diverse by-hour curve).
+      for (let m = 7 * 60; m <= 21 * 60; m += 30) {
+        const ts = new Date(day); ts.setHours(Math.floor(m / 60), m % 60, 0, 0);
         if (ts > now) continue;
-        const count = Math.max(0, Math.round((occFraction(h, dow) * popularity + (Math.random() - 0.5) * 0.18) * cap));
-        pushEvt(occRows, id, "occupancy", { count }, ts);
+        pushEvt(occRows, id, "occupancy", { count: occupancyAt(id, dow, m, cap) }, ts);
       }
       // power schedule (drives energy-saved). Whitelisted halls stay on.
       if (wl) continue;
@@ -165,32 +223,35 @@ async function main() {
   await insertRows("events", ["room_id", "type", "value", "ts"], occRows);
   await insertRows("events", ["room_id", "type", "value", "ts"], relayRows);
 
-  // ---- tickets (mix of types / statuses / ages) ----
-  // resolution speed (minutes) by type — hazards get cleared fast.
+  // ---- tickets (diverse mix of types / statuses / ages over the last 2 weeks) ----
+  // resolution speed (minutes) by type — hazards get cleared fast, equipment slower.
   const RESOLVE_MIN = { spill: [8, 25], lost_item: [15, 90], ac: [60, 240],
     projector: [30, 180], lights: [45, 200], other: [60, 300] };
   const ticketRows = [];
-  for (let i = 0; i < 24; i++) {
-    const type = rand(TICKET_TYPES);
+  const N_TICKETS = 46;
+  for (let i = 0; i < N_TICKETS; i++) {
+    const type = weightedType();
     const [roomId] = rand(ROOMS);
     const source = type === "lost_item" ? "anomaly"
       : (type === "spill" && Math.random() < 0.5 ? "anomaly" : "qr");
-    const createdAgoMin = rint(20, 7 * 24 * 60); // up to 7 days ago
+    const createdAgoMin = rint(30, 14 * 24 * 60); // spread over the last 14 days
     const created = new Date(now.getTime() - createdAgoMin * 60000);
-    // 45% resolved, 20% in progress, rest open
+    // Older tickets are far more likely to be resolved; fresh ones tend to be open.
+    const ageDays = createdAgoMin / (24 * 60);
+    const pResolved = ageDays > 3 ? 0.85 : ageDays > 1 ? 0.55 : 0.25;
     const roll = Math.random();
     let status = "open", resolvedAt = null;
-    if (roll < 0.45) {
+    if (roll < pResolved) {
       status = "resolved";
       const [lo, hi] = RESOLVE_MIN[type] || [30, 120];
       resolvedAt = new Date(created.getTime() + rint(lo, hi) * 60000);
       if (resolvedAt > now) resolvedAt = new Date(now.getTime() - rint(1, 30) * 60000);
-    } else if (roll < 0.65) {
+    } else if (roll < pResolved + 0.18) {
       status = "in_progress";
     }
     ticketRows.push([
       roomId, type, source, status,
-      Math.random() < 0.6 ? rand(NOTES[type]) : null,
+      Math.random() < 0.65 ? rand(NOTES[type]) : null,
       source === "anomaly" ? +(0.6 + Math.random() * 0.39).toFixed(2) : null,
       created.toISOString(),
       resolvedAt ? resolvedAt.toISOString() : null,
@@ -210,43 +271,8 @@ async function main() {
     ticketRows
   );
 
-  // ---- schedules: a permanent weekly timetable (FR2) ----
-  // Each row is a recurring weekly class: same course, same room, same weekday and
-  // time every week. day_of_week: 0=Sunday..6=Saturday. The Israel academic week
-  // runs Sunday(0)-Thursday(4); Fri/Sat are off.
-  // Grid entry: [dow, startHour, startMin, durationMin, roomId, course]
-  const TIMETABLE = [
-    // Sunday
-    [0, 8, 30, 90, "ficus-101", "SWE-301 Software Engineering"],
-    [0, 10, 15, 90, "ficus-201", "DB-210 Databases"],
-    [0, 10, 0, 120, "kirya-H1", "MATH-101 Calculus I"],
-    [0, 13, 0, 90, "kirya-Z1", "ENG-150 Technical English"],
-    [0, 14, 30, 90, "mapat-Gefen", "UX-220 Human-Computer Interaction"],
-    // Monday
-    [1, 9, 0, 120, "kirya-H1", "PHY-110 Physics I"],
-    [1, 9, 0, 90, "ficus-102", "ALG-201 Algorithms"],
-    [1, 11, 0, 90, "ficus-301", "SWE-301 Software Engineering"],
-    [1, 13, 30, 90, "kirya-H2", "OS-310 Operating Systems"],
-    [1, 15, 0, 120, "mapat-Tamar", "AI-410 Deep Learning"],
-    // Tuesday
-    [2, 8, 30, 90, "ficus-201", "DB-210 Databases"],
-    [2, 10, 15, 90, "ficus-302", "NET-330 Computer Networks"],
-    [2, 11, 0, 120, "kirya-H1", "MATH-101 Calculus I"],
-    [2, 14, 0, 90, "kirya-Z2", "STAT-205 Probability"],
-    [2, 16, 0, 90, "mapat-Oren", "SEC-420 Cyber Security"],
-    // Wednesday
-    [3, 9, 0, 90, "ficus-101", "ALG-201 Algorithms"],
-    [3, 10, 30, 120, "kirya-H2", "OS-310 Operating Systems"],
-    [3, 11, 0, 90, "ficus-301", "SWE-340 Software Architecture"],
-    [3, 13, 0, 90, "kirya-Z1", "ENG-150 Technical English"],
-    [3, 14, 30, 120, "mapat-Tamar", "AI-410 Deep Learning"],
-    // Thursday
-    [4, 9, 0, 90, "ficus-102", "NET-330 Computer Networks"],
-    [4, 10, 30, 120, "kirya-H1", "PHY-110 Physics I"],
-    [4, 11, 0, 90, "ficus-201", "DB-260 Advanced Databases"],
-    [4, 13, 0, 90, "kirya-Z2", "STAT-205 Probability"],
-    [4, 14, 30, 90, "mapat-Gefen", "UX-220 Human-Computer Interaction"],
-  ];
+  // ---- schedules: persist the weekly timetable (FR2). TIMETABLE is defined at the
+  // top of this file and shared with the occupancy generation above.
   const pad = (n) => String(n).padStart(2, "0");
   const hhmmss = (mins) => `${pad(Math.floor(mins / 60) % 24)}:${pad(mins % 60)}:00`;
   const sched = TIMETABLE.map(([dow, sh, sm, dur, roomId, course]) => {

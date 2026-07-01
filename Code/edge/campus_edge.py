@@ -41,9 +41,10 @@ class EdgeUnit:
         self.anomaly_streak = 0          # consecutive-frame filter (book §5.2.2)
         self.last_anomaly_cls = None
         # Forgotten-item detection (Use Case D), only active while the room is empty.
-        self._forgotten_streak = 0
+        self._forgotten_streak = 0          # consecutive frames the item has been SEEN
+        self._forgotten_absent_streak = 0   # consecutive frames it has been ABSENT
         self._forgotten_item = None
-        self._forgotten_published = False
+        self._forgotten_published = False   # is a "present" currently announced?
 
         # MQTT
         self.client = mqtt.Client(client_id=f"edge-{building}-{room}")
@@ -134,24 +135,26 @@ class EdgeUnit:
     def _detect_forgotten_item(self, frame):
         """Use Case D: a personal item left behind in an EMPTY room.
 
-        Only runs when the confirmed count is 0. The same item must persist for
-        FORGOTTEN_CONFIRM_FRAMES consecutive frames before we alert (filters a
-        one-frame false positive). We publish once when it appears and once when it
-        is gone; the server holds the room's power on until then. Privacy (NFR3):
-        we publish the item TYPE only — never the image.
+        Only runs when the confirmed count is 0. BOTH appearance and disappearance are
+        debounced over FORGOTTEN_CONFIRM_FRAMES consecutive frames, so a single flaky
+        detection can't add/remove the ticket. We publish present=True exactly once
+        when an item appears and present=False once when it's gone; the server keeps a
+        single ticket in between. Privacy (NFR3): we publish the item TYPE only.
         """
         if self.last_count != 0:
-            # Room occupied (or count not yet confirmed empty): reset. The server
-            # clears the forgotten flag itself once occupancy > 0.
-            self._forgotten_streak = 0
-            self._forgotten_item = None
-            self._forgotten_published = False
+            # Room occupied: "forgotten in an empty room" doesn't apply right now.
+            # Pause detection but KEEP the published state — so we neither re-alert nor
+            # lose track when the room empties again. (The server releases the energy
+            # hold on occupancy itself.)
+            self._forgotten_absent_streak = 0
             return
 
         items = self.counter.detect_items(frame, conf=config.FORGOTTEN_CONF_THRESHOLD)
         top = max(items, key=lambda it: it[1]) if items else None
+
         if top is not None:
             name, conf = top
+            self._forgotten_absent_streak = 0
             if name == self._forgotten_item:
                 self._forgotten_streak += 1
             else:
@@ -163,13 +166,16 @@ class EdgeUnit:
                 self._forgotten_published = True
                 log.info("FORGOTTEN ITEM %s (%.2f)", name, conf)
         else:
-            # Nothing on the floor now. If we'd alerted, tell the server it's gone.
-            if self._forgotten_published:
-                self._publish("forgotten", {"present": False})
-                log.info("forgotten item cleared")
             self._forgotten_streak = 0
-            self._forgotten_item = None
-            self._forgotten_published = False
+            self._forgotten_absent_streak += 1
+            # Only declare it gone after it's been absent for the full debounce window,
+            # so one missed frame doesn't yank (then re-create) the ticket.
+            if (self._forgotten_published
+                    and self._forgotten_absent_streak >= config.FORGOTTEN_CONFIRM_FRAMES):
+                self._publish("forgotten", {"present": False})
+                self._forgotten_published = False
+                self._forgotten_item = None
+                log.info("forgotten item cleared")
 
     WINDOW = "Campus-Sense camera (press q to close)"
 

@@ -1,11 +1,20 @@
 import { Router } from "express";
 import Joi from "joi";
 import { query } from "../db.js";
+import { allAssignments } from "../cameraStore.js";
+
+// Cooldown so auto-detected events can't spam the board: at most one auto ticket of a
+// given (room, type) per this many minutes (book §4.5.3 — protect the ticket queue).
+const TICKET_COOLDOWN_MIN = Number(process.env.TICKET_COOLDOWN_MINUTES || 5);
 
 // Internal endpoint used by the decision engine to push events + room-state changes
 // into the database and broadcast them live to dashboards (book Table 4.1, §5.3.3).
 export default function internalRoutes(io) {
   const router = Router();
+
+  // Current camera→room assignments, read by the engine to remap a camera's events
+  // to the room it's currently pointed at (set from the Live Map dropdown).
+  router.get("/cameras", (_req, res) => res.json(allAssignments()));
 
   const eventSchema = Joi.object({
     room_id: Joi.string().required(),
@@ -77,6 +86,58 @@ export default function internalRoutes(io) {
     if (!rows[0]) return res.status(404).json({ error: "unknown room" });
     io.emit("room:update", rows[0]); // live map update (book §5.3.3)
     res.json(rows[0]);
+  });
+
+  // Lost-and-found lifecycle (Use Case D). The edge reports a forgotten item as
+  // present / absent; we keep EXACTLY ONE open "lost_item" ticket per room while the
+  // item is present, and remove it the moment it's gone. Idempotent: repeated
+  // present=true messages never create duplicates.
+  const lostSchema = Joi.object({
+    room_id: Joi.string().required(),
+    present: Joi.boolean().required(),
+    item: Joi.string().allow("", null),
+    conf: Joi.number().min(0).max(1).allow(null),
+  });
+  router.post("/lost-item", async (req, res) => {
+    const { error, value } = lostSchema.validate(req.body);
+    if (error) return res.status(400).json({ error: error.message });
+
+    if (value.present) {
+      const note = value.item ? `Forgotten item: ${value.item}` : "Forgotten item left behind";
+      // Create only if there is no live lost_item ticket for this room AND none was
+      // created within the cooldown window. This both de-duplicates (one open ticket
+      // at a time) and rate-limits re-creation to once per TICKET_COOLDOWN_MIN.
+      const { rows } = await query(
+        `INSERT INTO tickets (room_id, type, source, note, confidence)
+         SELECT $1, 'lost_item', 'anomaly', $2, $3
+         WHERE NOT EXISTS (
+           SELECT 1 FROM tickets
+            WHERE room_id = $1 AND type = 'lost_item'
+              AND (status <> 'resolved'
+                   OR created_at > now() - ($4 || ' minutes')::interval)
+         )
+         RETURNING *`,
+        [value.room_id, note, value.conf ?? null, String(TICKET_COOLDOWN_MIN)]
+      );
+      if (rows[0]) {
+        io.emit("ticket:new", rows[0]); // live push to dashboards + cleaner view
+        return res.status(201).json(rows[0]);
+      }
+      return res.json({ ok: true, deduped: true }); // already open / within cooldown
+    }
+
+    // Item gone: close the open lost_item ticket(s) for this room so they leave the
+    // to-do list. We RESOLVE rather than delete — it leaves the cleaner's open list,
+    // keeps an audit trail, and anchors the cooldown above. We only touch ones nobody
+    // has started; a ticket a cleaner moved to 'in_progress' is left for them.
+    const { rows } = await query(
+      `UPDATE tickets SET status = 'resolved', resolved_at = now()
+        WHERE room_id = $1 AND type = 'lost_item' AND status = 'open'
+        RETURNING *`,
+      [value.room_id]
+    );
+    rows.forEach((t) => io.emit("ticket:update", t)); // UIs reload -> drops from to-do
+    return res.json({ ok: true, resolved: rows.length });
   });
 
   return router;

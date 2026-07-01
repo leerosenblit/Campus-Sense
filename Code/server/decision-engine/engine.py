@@ -40,6 +40,9 @@ class Engine:
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
         self.scheduler = BackgroundScheduler()
+        # cameraId -> roomId: which room each camera is currently pointed at (set from
+        # the Live Map dropdown). Refreshed from the API; identity if unset.
+        self._assignment: dict[str, str] = {}
 
     # ---- helpers ----
     def _room(self, room_id: str) -> sm.RoomState:
@@ -82,6 +85,16 @@ class Engine:
             log.warning("schedule check for %s failed (assuming class active): %s", room_id, e)
             return True, True
 
+    def _refresh_assignments(self):
+        """Pull the camera→room map so a camera's events get attributed to whatever
+        room the dashboard has it pointed at. Fails quietly, keeping the last map."""
+        try:
+            r = requests.get(f"{API_BASE}/internal/cameras", timeout=3)
+            r.raise_for_status()
+            self._assignment = r.json() or {}
+        except requests.RequestException:
+            pass
+
     def _persist_event(self, room_id, etype, value):
         self._post("/internal/events", {"room_id": room_id, "type": etype, "value": value})
 
@@ -98,15 +111,6 @@ class Engine:
         })
         log.info("ticket created from anomaly %s in %s", anomaly_cls, room_id)
 
-    def _create_lost_ticket(self, room_id, item, conf):
-        """Use Case D: open a lost-and-found ticket for an item left in an empty room."""
-        note = f"Forgotten item: {item}" if item else "Forgotten item left behind"
-        self._post("/tickets", {
-            "room_id": room_id, "type": "lost_item", "source": "anomaly",
-            "note": note, "confidence": conf,
-        })
-        log.info("lost-and-found ticket created (%s) in %s", item, room_id)
-
     # ---- MQTT ----
     def _on_connect(self, client, userdata, flags, rc):
         client.subscribe("campus/+/+/occupancy")
@@ -121,6 +125,13 @@ class Engine:
         if not parsed:
             return
         room_id, building, room, leaf = parsed
+        # Remap the camera's events to the room it's currently assigned to (Live Map
+        # dropdown). The topic id is the camera identity; the target is where its
+        # events count. building/room follow so relay commands go to the right room.
+        target = self._assignment.get(room_id)
+        if target and target != room_id and "-" in target:
+            room_id = target
+            building, room = target.split("-", 1)
         try:
             payload = json.loads(msg.payload.decode())
         except json.JSONDecodeError:
@@ -146,9 +157,13 @@ class Engine:
             # Use Case D: item left behind (present=true) or retrieved (present=false).
             self._persist_event(room_id, "forgotten", payload)
             present = bool(payload.get("present", True))
-            is_new = st.on_forgotten_item(present)
-            if is_new:  # one lost-and-found ticket per episode, not per frame
-                self._create_lost_ticket(room_id, payload.get("item"), payload.get("conf"))
+            st.on_forgotten_item(present)  # manages energy hold + room status
+            # The API keeps exactly one open lost_item ticket while the item is present
+            # and removes it once gone — idempotent, so no duplicates and auto-cleared.
+            self._post("/internal/lost-item", {
+                "room_id": room_id, "present": present,
+                "item": payload.get("item"), "conf": payload.get("conf"),
+            })
             self._report_state(st)
 
         elif leaf == "relay":
@@ -172,7 +187,9 @@ class Engine:
 
     def start(self):
         self.client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        self._refresh_assignments()
         self.scheduler.add_job(self._tick, "interval", seconds=10)
+        self.scheduler.add_job(self._refresh_assignments, "interval", seconds=3)
         self.scheduler.start()
         log.info("decision engine started (empty=%dmin, lookahead=%dmin)",
                  EMPTY_MINUTES, LOOKAHEAD_MIN)

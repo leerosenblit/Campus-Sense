@@ -63,9 +63,11 @@ function RoomCard({ r }) {
 
 export default function MapPage() {
   const [rooms, setRooms] = useState([]);
+  const [camera, setCamera] = useState(null); // { camera_id, room_id } for the live edge unit
 
   useEffect(() => {
     apiFetch("/rooms").then(setRooms).catch(() => {});
+    apiFetch("/rooms/cameras").then((cams) => setCamera(cams[0] || null)).catch(() => {});
     const onUpdate = (room) =>
       setRooms((prev) => {
         const exists = prev.some((r) => r.id === room.id);
@@ -74,6 +76,16 @@ export default function MapPage() {
     socket.on("room:update", onUpdate);
     return () => socket.off("room:update", onUpdate);
   }, []);
+
+  // Point the live camera at a room — events get attributed there from this moment.
+  const assignCamera = (roomId) => {
+    if (!camera) return;
+    setCamera({ ...camera, room_id: roomId });
+    apiFetch(`/rooms/cameras/${encodeURIComponent(camera.camera_id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ room_id: roomId }),
+    }).catch(() => {});
+  };
 
   // Group rooms by building for a tidier overview.
   const byBuilding = useMemo(() => {
@@ -86,13 +98,29 @@ export default function MapPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h2 className="text-2xl font-bold">Campus Overview</h2>
-        {alerts > 0 && (
-          <span className="inline-flex items-center gap-2 text-sm font-medium text-red-600 dark:text-red-400">
-            <AlertIcon size={18} /> {alerts} room{alerts > 1 ? "s" : ""} need{alerts > 1 ? "" : "s"} attention
-          </span>
-        )}
+        <div className="flex items-center gap-4 flex-wrap">
+          {alerts > 0 && (
+            <span className="inline-flex items-center gap-2 text-sm font-medium text-red-600 dark:text-red-400">
+              <AlertIcon size={18} /> {alerts} room{alerts > 1 ? "s" : ""} need{alerts > 1 ? "" : "s"} attention
+            </span>
+          )}
+          {camera && (
+            <label className="inline-flex items-center gap-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">Live camera feeds</span>
+              <select
+                value={camera.room_id}
+                onChange={(e) => assignCamera(e.target.value)}
+                className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-sm"
+              >
+                {rooms.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name} · {buildingLabel(r.building)}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       </div>
 
       {rooms.length === 0 && (
